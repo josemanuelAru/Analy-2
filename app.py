@@ -37,7 +37,7 @@ if uploaded_files:
 
     if mode == "📊 Módulo Caso Práctico (Clase 1 & 2)":
         st.header("🎯 Módulo de Trabajo: Caso Práctico CRM")
-        st.write("Consolida los datos clave para defender tus 3 diapositivas de la **Clase 1** (Perfilado y Selección de Segmentos) y **Clase 2** (Evaluación de Canales y Experimento).")
+        st.write("Consolida los datos clave para defender tus diapositivas de la **Clase 1** (Perfilado y Selección de Segmentos) y **Clase 2** (Evaluación de Canales y Experimento).")
 
         # Verificar tablas mínimas necesarias
         has_clientes = any("clientes" in name.lower() and "details" not in name.lower() for name in dfs.keys())
@@ -185,7 +185,7 @@ if uploaded_files:
                         exploded_ventas = ventas_with_offers.explode('offer_id_raw')
                         exploded_ventas['offer_id_clean'] = exploded_ventas['offer_id_raw'].str.strip()
 
-                        # PRECAUCIÓN: Eliminar el prefijo '500' de cada offer_id
+                        # Eliminar el prefijo '500' de cada offer_id
                         exploded_ventas['offer_id'] = exploded_ventas['offer_id_clean'].apply(
                             lambda x: int(x[3:]) if str(x).startswith('500') and len(str(x)) > 3 and str(x)[3:].isdigit() else None
                         )
@@ -237,22 +237,6 @@ if uploaded_files:
                     loyalty_display['familias_productos_canjeadas'] = loyalty_display['familias_productos_canjeadas'].round(2)
 
                     st.dataframe(loyalty_display, use_container_width=True)
-
-                # --- SECCIÓN 6: ESTRATEGIA Y RECOMENDACIÓN DE NEGOCIO ---
-                st.markdown("---")
-                st.subheader("6. Argumentario de Negocio para la Presentación (3 Diapositivas)")
-                
-                st.markdown("""
-                * **Diapositiva 1: Protegemos a la cúspide (`1. Champions`)**
-                    * *Diagnóstico:* 7.516 usuarios inyectan 2,71 M€ (24,7 compras/año). Dominados por **Engaged Family Member (39,0%)**. Tienen un engagement récord (**98,7% utiliza sus puntos**).
-                    * *Acción:* Cero descuentos directos. Campañas de aceleración de puntos acumulados (`points_balance` ~991 pts) enfocadas en sus canjes favoritos: **Big Mac (14,2%)** y **McNuggets (13,4%)**.
-                * **Diapositiva 2: Escalamos la clase media (`2. Loyal Active`)**
-                    * *Diagnóstico:* 5.058 usuarios con el mismo ticket medio (14,27 €) pero la mitad de frecuencia (12,7 compras/año). Engagement muy alto en lealtad (**94,4% de penetración**).
-                    * *Acción:* Retos condicionados por Push (45,7% opt-in) para aumentar visitas consecutivas premiando con **Big Mac (13,3%)** o **Patatas Fritas (8,0%)**.
-                * **Diapositiva 3: Retención urgente (`6. At Risk`)**
-                    * *Diagnóstico:* 6.960 usuarios en enfriamiento (488k € en riesgo de fuga). Su penetración de lealtad ha caído al **62,3%** y el algoritmo los mueve a **Non Transactional Users (22,8%)**.
-                    * *Acción:* Campañas agresivas de *Winback* con cupones (*Deals*) de tiempo limitado vía Push/Email antes de que caigan al segmento *Hibernating*.
-                """)
 
     else:
         # --- MODO DE TABLAS INDIVIDUALES Y BÚSQUEDA ---
