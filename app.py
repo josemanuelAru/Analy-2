@@ -3,170 +3,169 @@ import pandas as pd
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Consolidador y Filtro de CSVs",
-    page_icon="📊",
+    page_title="McDonald's NL - CRM Analytics & Caso Práctico",
+    page_icon="🍔",
     layout="wide"
 )
 
-st.title("📊 Unificador de CSVs y Buscador por Student ID")
-st.write("Sube tus archivos CSV para unificarlos y consultar la información de cualquier cliente/estudiante.")
+st.title("🍔 McDonald's NL — CRM & Customer Analytics Dashboard")
+st.write("Carga tus archivos CSV del caso práctico (`clientes.csv`, `ventas.csv`, `Customers_details.csv`, `Campañas.csv`, etc.) para realizar el análisis interactivo.")
 
-# Sidebar para cargar archivos y configurar la combinación
+# Sidebar: Carga de archivos
 st.sidebar.header("1. Cargar Archivos CSV")
 uploaded_files = st.sidebar.file_uploader(
-    "Selecciona uno o varios archivos CSV", 
+    "Selecciona los archivos CSV del proyecto", 
     type=["csv"], 
     accept_multiple_files=True
 )
 
 if uploaded_files:
-    dfs = []
-    file_names = []
-    
+    dfs = {}
     for file in uploaded_files:
         try:
-            df = pd.read_csv(file)
-            dfs.append(df)
-            file_names.append(file.name)
+            dfs[file.name] = pd.read_csv(file)
         except Exception as e:
-            st.error(f"Error al leer {file.name}: {e}")
+            st.error(f"Error al cargar {file.name}: {e}")
 
-    st.sidebar.success(f"Cargados {len(dfs)} archivo(s): {', '.join(file_names)}")
+    st.sidebar.success(f"Cargados {len(dfs)} archivo(s)")
 
-    st.sidebar.header("2. Método de Combinación")
-    merge_method = st.sidebar.radio(
-        "¿Cómo deseas mezclar las tablas?",
-        ("Combinar por columna 'student_id' (Merge/Join)", 
-         "Apilar filas de tablas similares (Concat)"),
-        help="Elige 'Merge' si tienes tablas distintas. Elige 'Concat' si son archivos con la misma estructura."
+    # Modos de navegación
+    mode = st.sidebar.radio(
+        "Modo de Navegación:",
+        ("📊 Módulo Caso Práctico (Clase 1 & 2)", "📂 Tablas Individuales y Búsqueda")
     )
 
-    merged_df = None
+    if mode == "📊 Módulo Caso Práctico (Clase 1 & 2)":
+        st.header("🎯 Módulo de Trabajo: Caso Práctico CRM")
+        st.write("Este módulo consolida los datos clave para defender tus 3 diapositivas de la **Clase 1** (Perfilado y Selección de Segmentos) y **Clase 2** (Evaluación de Canales y Experimento).")
 
-    if merge_method == "Combinar por columna 'student_id' (Merge/Join)":
-        valid_dfs = [df for df in dfs if "student_id" in df.columns]
-        
-        if len(valid_dfs) < len(dfs):
-            st.warning("Algunos archivos no contienen la columna 'student_id'. Solo se procesarán los que sí la tienen.")
-        
-        if valid_dfs:
-            merged_df = valid_dfs[0]
-            for i, df in enumerate(valid_dfs[1:], start=1):
-                merged_df = pd.merge(merged_df, df, on="student_id", how="outer", suffixes=('', f'_doc{i}'))
+        # Verificar tablas mínimas necesarias
+        has_clientes = any("clientes" in name.lower() for name in dfs.keys())
+        has_ventas = any("ventas" in name.lower() for name in dfs.keys())
+
+        if not (has_clientes and has_ventas):
+            st.warning("⚠️ Para usar este módulo necesitas cargar al menos los archivos `clientes.csv` y `ventas.csv`.")
         else:
-            st.error("Ninguno de los archivos contiene la columna 'student_id'.")
+            # Obtener dataframes principales
+            clientes_file = [name for name in dfs.keys() if "clientes" in name.lower() and "details" not in name.lower()][0]
+            ventas_file = [name for name in dfs.keys() if "ventas" in name.lower()][0]
+
+            df_clientes = dfs[clientes_file]
+            df_ventas = dfs[ventas_file]
+
+            # Cruce de ventas con clientes por student_id
+            sales_summary = df_ventas.groupby('student_id').agg(
+                gasto_total=('totalamount', 'sum'),
+                frecuencia=('sale_id', 'nunique'),
+                ticket_medio=('totalamount', 'mean')
+            ).reset_index()
+
+            merged_data = pd.merge(df_clientes, sales_summary, on='student_id', how='left')
+
+            # Si está cargado Customers_details.csv, lo unimos
+            details_file = [name for name in dfs.keys() if "details" in name.lower()]
+            if details_file:
+                df_details = dfs[details_file[0]]
+                cols_to_use = [c for c in df_details.columns if c not in merged_data.columns or c == 'student_id']
+                merged_data = pd.merge(merged_data, df_details[cols_to_use], on='student_id', how='left')
+
+            # --- SECCIÓN 1: COMPARATIVA GLOBAL DE SEGMENTOS ---
+            st.subheader("1. Visión General de los 11 Segmentos RFM")
+            
+            segment_table = merged_data.groupby('bucket_name').agg(
+                usuarios=('student_id', 'count'),
+                gasto_total_eur=('gasto_total', 'sum'),
+                ticket_medio_eur=('ticket_medio', 'mean'),
+                frecuencia_media=('frecuencia', 'mean')
+            ).reset_index()
+
+            segment_table['ticket_medio_eur'] = segment_table['ticket_medio_eur'].round(2)
+            segment_table['frecuencia_media'] = segment_table['frecuencia_media'].round(1)
+            segment_table['gasto_total_eur'] = segment_table['gasto_total_eur'].round(2)
+
+            st.dataframe(segment_table.sort_values(by='gasto_total_eur', ascending=False), use_container_width=True)
+
+            # --- SECCIÓN 2: DEFENSA DE LOS 3 SEGMENTOS SELECCIONADOS ---
+            st.markdown("---")
+            st.subheader("2. Ficha de Defensa: Tus 3 Segmentos Prioritarios (Clase 1)")
+
+            target_segments = ['1. Champions', '2. Loyal Active', '6. At Risk']
+            df_targets = merged_data[merged_data['bucket_name'].isin(target_segments)]
+
+            col1, col2, col3 = st.columns(3)
+
+            for idx, (col, seg) in enumerate(zip([col1, col2, col3], target_segments)):
+                df_seg = df_targets[df_targets['bucket_name'] == seg]
+                with col:
+                    st.markdown(f"### `{seg}`")
+                    st.metric("Usuarios Únicos", f"{len(df_seg):,}")
+                    st.metric("Ticket Medio", f"{df_seg['ticket_medio'].mean():.2f} €")
+                    st.metric("Frecuencia Anual", f"{df_seg['frecuencia'].mean():.1f} visitas")
+                    st.metric("Gasto Total Acumulado", f"{df_seg['gasto_total'].sum():,.2f} €")
+
+                    if 'points_balance' in df_seg.columns:
+                        st.write(f"🏅 **Puntos acumulados (media):** {df_seg['points_balance'].mean():,.0f} pts")
+                    if 'persona' in df_seg.columns:
+                        top_persona = df_seg['persona'].value_counts().index[0] if not df_seg['persona'].dropna().empty else "N/D"
+                        st.write(f"👤 **Persona dominante:** {top_persona}")
+                    if 'push_optin' in df_seg.columns:
+                        st.write(f"📲 **Aceptan Notificaciones Push:** {df_seg['push_optin'].mean()*100:.1f}%")
+
+            # --- SECCIÓN 3: ESTRATEGIA Y RECOMENDACIÓN DE NEGOCIO ---
+            st.markdown("---")
+            st.subheader("3. Argumentario de Negocio para la Presentación (3 Diapositivas)")
+            
+            st.markdown("""
+            * **Diapositiva 1: Protegemos a la cúspide (`1. Champions`)**
+                * *Diagnóstico:* 7.516 usuarios inyectan 2,71 Millones de € (24,7 compras/año).
+                * *Acción:* Cero descuentos en dinero. Campañas de canje de puntos acumulados (`points_balance` promedio ~991 pts) para Big Mac y McNuggets.
+            * **Diapositiva 2: Escalamos la clase media (`2. Loyal Active`)**
+                * *Diagnóstico:* 5.058 usuarios con el mismo ticket medio (14,27 €) pero la mitad de frecuencia que los Champions (12,7 compras/año).
+                * *Acción:* Retos condicionados por Push (45,7% de opt-in) para aumentar visitas consecutivas.
+            * **Diapositiva 3: Retención urgente (`6. At Risk`)**
+                * *Diagnóstico:* 6.960 usuarios en enfriamiento que representan casi 500k € en riesgo de fuga.
+                * *Acción:* Campañas agresivas de *Winback* con cupones (*Deals*) por tiempo limitado vía Push/Email antes de que caigan a *Hibernating*.
+            """)
+
     else:
-        merged_df = pd.concat(dfs, ignore_index=True)
+        # --- MODO DE TABLAS INDIVIDUALES Y BÚSQUEDA ---
+        tab_names = [f"📄 {name}" for name in dfs.keys()] + ["🔍 Búsqueda por student_id"]
+        tabs = st.tabs(tab_names)
 
-    if merged_df is not None and not merged_df.empty:
-        st.subheader("📋 Vista Previa de los Datos Unificados")
-        st.write(f"Total de registros: **{len(merged_df):,}** | Total de columnas: **{len(merged_df.columns)}**")
-        st.dataframe(merged_df.head(10), use_container_width=True)
+        for i, (file_name, df) in enumerate(dfs.items()):
+            with tabs[i]:
+                st.subheader(f"Tabla: `{file_name}`")
+                st.write(f"Registros: **{len(df):,}** | Columnas: **{len(df.columns)}**")
+                st.dataframe(df.head(100), use_container_width=True)
 
-        # --- SECCIÓN DE FILTROS ---
-        st.markdown("---")
-        st.subheader("🔍 Filtros Activos")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**👤 Filtro por `student_id`**")
-            if "student_id" in merged_df.columns:
-                unique_ids = merged_df["student_id"].dropna().astype(str).unique().tolist()
-                selected_id = st.selectbox("Selecciona el ID:", options=["-- Todos / Ninguno en específico --"] + unique_ids)
-                text_search = st.text_input("O busca un ID por texto parcial:")
+        with tabs[-1]:
+            st.subheader("🔍 Filtrar y Buscar Registros por `student_id`")
+            
+            # Unir todas las tablas que tengan student_id
+            valid_dfs = [df for df in dfs.values() if "student_id" in df.columns]
+            
+            if valid_dfs:
+                merged_search = valid_dfs[0]
+                for idx, df in enumerate(valid_dfs[1:], start=1):
+                    merged_search = pd.merge(merged_search, df, on="student_id", how="outer", suffixes=('', f'_doc{idx}'))
+
+                unique_ids = merged_search["student_id"].dropna().astype(str).unique().tolist()
+                selected_id = st.selectbox("Selecciona un `student_id`:", options=["-- Todos --"] + unique_ids)
+                text_search = st.text_input("O busca por coincidencia parcial:")
+
+                filtered_search = merged_search.copy()
+                if selected_id != "-- Todos --":
+                    filtered_search = filtered_search[filtered_search["student_id"].astype(str) == selected_id]
+                elif text_search:
+                    filtered_search = filtered_search[filtered_search["student_id"].astype(str).str.contains(text_search, case=False, na=False)]
+
+                st.write(f"Resultados encontrados: **{len(filtered_search)}**")
+                st.dataframe(filtered_search, use_container_width=True)
+
+                if 'points_balance' in filtered_search.columns:
+                    pts = pd.to_numeric(filtered_search['points_balance'], errors='coerce').sum()
+                    st.success(f"🏅 **Puntos de lealtad acumulados por la selección:** {pts:,.0f} pts")
             else:
-                selected_id = "-- Todos / Ninguno en específico --"
-                text_search = ""
-                st.warning("La columna 'student_id' no está presente.")
-
-        with col2:
-            st.markdown("**🎂 Filtro por Grupo/Edad**")
-            possible_age_cols = [c for c in merged_df.columns if any(k in c.lower() for k in ["edad", "age", "grupo", "range", "bucket"])]
-            selected_age_col = st.selectbox("Selecciona la columna a filtrar:", options=["Ninguna"] + possible_age_cols + list(merged_df.columns))
-            
-            selected_age_groups = []
-            if selected_age_col != "Ninguna":
-                unique_ages = merged_df[selected_age_col].dropna().unique().tolist()
-                selected_age_groups = st.multiselect("Selecciona el/los grupo(s):", options=unique_ages)
-
-        filtered_df = merged_df.copy()
-
-        if "student_id" in filtered_df.columns:
-            if selected_id != "-- Todos / Ninguno en específico --":
-                filtered_df = filtered_df[filtered_df["student_id"].astype(str) == selected_id]
-            elif text_search:
-                filtered_df = filtered_df[filtered_df["student_id"].astype(str).str.contains(text_search, case=False, na=False)]
-        
-        if selected_age_col != "Ninguna" and selected_age_groups:
-            filtered_df = filtered_df[filtered_df[selected_age_col].isin(selected_age_groups)]
-
-        # --- LÓGICA DE PUNTOS EN LA TABLA CONSOLIDADA ---
-        totalmount_cols = [c for c in filtered_df.columns if "totalmount" in c.lower()]
-        if totalmount_cols:
-            col_name = totalmount_cols[0]
-            # Crear la columna de puntos por cada fila
-            filtered_df["puntos_calculados"] = pd.to_numeric(filtered_df[col_name], errors='coerce').fillna(0)
-            total_puntos_global = filtered_df["puntos_calculados"].sum()
-
-        st.write(f"Resultados consolidados encontrados: **{len(filtered_df)}**")
-        
-        if totalmount_cols:
-            st.success(f"🏆 **Total de puntos acumulados en esta selección (1€ = 1 Pto): {total_puntos_global:,.2f}**")
-
-        st.dataframe(filtered_df, use_container_width=True)
-
-        # --- SECCIÓN: TABLAS INDIVIDUALES FILTRADAS ---
-        st.markdown("---")
-        st.subheader("📑 Resultados Desglosados en los Archivos Originales")
-        
-        for file_name, raw_df in zip(file_names, dfs):
-            temp_df = raw_df.copy()
-            
-            if selected_id != "-- Todos / Ninguno en específico --" or text_search:
-                if "student_id" in temp_df.columns:
-                    if selected_id != "-- Todos / Ninguno en específico --":
-                        temp_df = temp_df[temp_df["student_id"].astype(str) == selected_id]
-                    elif text_search:
-                        temp_df = temp_df[temp_df["student_id"].astype(str).str.contains(text_search, case=False, na=False)]
-                else:
-                    temp_df = temp_df.iloc[0:0] 
-            
-            if selected_age_col != "Ninguna" and selected_age_groups:
-                if selected_age_col in temp_df.columns:
-                    temp_df = temp_df[temp_df[selected_age_col].isin(selected_age_groups)]
-                else:
-                    temp_df = temp_df.iloc[0:0]
-            
-            # --- LÓGICA DE PUNTOS EN VENTAS.CSV ---
-            if "ventas" in file_name.lower() and "totalmount" in temp_df.columns.str.lower():
-                # Encontrar el nombre exacto de la columna respetando mayúsculas/minúsculas
-                col_exacta = [c for c in temp_df.columns if c.lower() == "totalmount"][0]
-                temp_df["puntos_calculados"] = pd.to_numeric(temp_df[col_exacta], errors='coerce').fillna(0)
-                suma_puntos = temp_df["puntos_calculados"].sum()
-
-            st.markdown(f"**Archivo de origen: `{file_name}`**")
-            if len(temp_df) > 0:
-                st.write(f"Coincidencias en este archivo: **{len(temp_df)}**")
-                
-                # Mostrar el cuadro de éxito si es el archivo de ventas
-                if "ventas" in file_name.lower() and "totalmount" in temp_df.columns.str.lower():
-                    st.success(f"🏆 Puntos generados en `{file_name}`: **{suma_puntos:,.2f}**")
-                    
-                st.dataframe(temp_df, use_container_width=True)
-            else:
-                st.info("Sin coincidencias (o la tabla no contiene las columnas filtradas).")
-
-        # --- DESCARGAS ---
-        st.markdown("---")
-        st.subheader("📥 Descargar Resultados Consolidados")
-
-        col_d1, col_d2 = st.columns(2)
-        with col_d1:
-            csv_all = merged_df.to_csv(index=False).encode('utf-8')
-            st.download_button("Descargar Tabla Completa Unificada (CSV)", data=csv_all, file_name="clientes_unificados.csv", mime="text/csv")
-        with col_d2:
-            csv_filtered = filtered_df.to_csv(index=False).encode('utf-8')
-            st.download_button("Descargar Solo Datos Filtrados (CSV)", data=csv_filtered, file_name="cliente_filtrado.csv", mime="text/csv")
+                st.error("No se encontró la columna 'student_id' en los archivos cargados.")
 else:
-    st.info("👆 Por favor, sube uno o más archivos CSV desde la barra lateral para empezar.")
+    st.info("👆 Por favor, sube tus archivos CSV desde la barra lateral izquierda para iniciar la herramienta.")
