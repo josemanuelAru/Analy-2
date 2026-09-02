@@ -171,7 +171,7 @@ if uploaded_files:
                 if not has_offers:
                     st.info("ℹ️ Carga el archivo `Offers.csv` para ver las ofertas y promociones específicas que compran estos usuarios.")
                 else:
-                    st.markdown("#### 🏷️ Top Ofertas y Menús Comprados (`Offers.csv`)")
+                    st.markdown("#### 🏷️ Ranking Completo de Ofertas y Menús Comprados (`Offers.csv`)")
                     df_offers = dfs[offers_file[0]]
 
                     # Filtrar ventas de los segmentos seleccionados con ofertas
@@ -196,11 +196,12 @@ if uploaded_files:
                         col_off1, col_demo2 = st.columns(2)
 
                         with col_off1:
-                            st.markdown("**Top 10 Títulos de Ofertas/Menús Más Comprados:**")
-                            top_titles = merged_offers.groupby(['bucket_name', 'title'])['sale_id'].count().reset_index()
-                            top_titles.columns = ['Segmento', 'Título Oferta / Producto', 'Veces Comprado']
-                            top_titles = top_titles.sort_values(by='Veces Comprado', ascending=False).groupby('Segmento').head(5)
-                            st.dataframe(top_titles, use_container_width=True)
+                            st.markdown("**Todas las Ofertas / Menús Comprados (sin límite):**")
+                            all_titles = merged_offers.groupby(['bucket_name', 'title'])['sale_id'].count().reset_index()
+                            all_titles.columns = ['Segmento', 'Título Oferta / Producto', 'Veces Comprado']
+                            # Se muestran TODAS las ofertas ordenadas de mayor a menor compra
+                            all_titles = all_titles.sort_values(by=['Segmento', 'Veces Comprado'], ascending=[True, False]).reset_index(drop=True)
+                            st.dataframe(all_titles, use_container_width=True)
 
                         with col_demo2:
                             st.markdown("**Estrategia de Marketing Usada (`marketing_sublayer`):**")
