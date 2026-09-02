@@ -70,16 +70,20 @@ if uploaded_files:
                 cols_to_use = [c for c in df_details.columns if c not in merged_data.columns or c == 'student_id']
                 merged_data = pd.merge(merged_data, df_details[cols_to_use], on='student_id', how='left')
 
+            # Normalizar nombre de la columna bucket_name tras los cruces
+            bucket_col = [c for c in merged_data.columns if 'bucket_name' in c][0]
+
             # --- SECCIÓN 1: COMPARATIVA GLOBAL DE SEGMENTOS ---
             st.subheader("1. Visión General de los 11 Segmentos RFM")
             
-            segment_table = merged_data.groupby('bucket_name').agg(
+            segment_table = merged_data.groupby(bucket_col).agg(
                 usuarios=('student_id', 'count'),
                 gasto_total_eur=('gasto_total', 'sum'),
                 ticket_medio_eur=('ticket_medio', 'mean'),
                 frecuencia_media=('frecuencia', 'mean')
             ).reset_index()
 
+            segment_table.rename(columns={bucket_col: 'Segmento'}, inplace=True)
             segment_table['ticket_medio_eur'] = segment_table['ticket_medio_eur'].round(2)
             segment_table['frecuencia_media'] = segment_table['frecuencia_media'].round(1)
             segment_table['gasto_total_eur'] = segment_table['gasto_total_eur'].round(2)
@@ -91,12 +95,12 @@ if uploaded_files:
             st.subheader("2. Ficha de Defensa: Tus 3 Segmentos Prioritarios")
 
             target_segments = ['1. Champions', '2. Loyal Active', '6. At Risk']
-            df_targets = merged_data[merged_data['bucket_name'].isin(target_segments)]
+            df_targets = merged_data[merged_data[bucket_col].isin(target_segments)]
 
             col1, col2, col3 = st.columns(3)
 
             for idx, (col, seg) in enumerate(zip([col1, col2, col3], target_segments)):
-                df_seg = df_targets[df_targets['bucket_name'] == seg]
+                df_seg = df_targets[df_targets[bucket_col] == seg]
                 with col:
                     st.markdown(f"### `{seg}`")
                     st.metric("Usuarios Únicos", f"{len(df_seg):,}")
@@ -109,9 +113,9 @@ if uploaded_files:
                     if 'push_optin' in df_seg.columns:
                         st.write(f"📲 **Aceptan Notificaciones Push:** {df_seg['push_optin'].mean()*100:.1f}%")
 
-            # --- SECCIÓN 3: PASO 2 - PERFIL DEMOGRÁFICO Y CANJES (Customers_details.csv) ---
+            # --- SECCIÓN 3: PERFIL DEMOGRÁFICO Y CANJES ---
             st.markdown("---")
-            st.subheader("3. Paso 2: Perfil Demográfico (`persona`) y Hábitos de Canje (`redeemer_...`)")
+            st.subheader("3. Perfil Demográfico (`persona`) y Hábitos de Canje (`redeemer_...`)")
 
             if not has_details:
                 st.info("ℹ️ Sube el archivo `Customers_details.csv` en la barra lateral para desbloquear el desglose por tipo de Persona y Canjes de Productos.")
@@ -121,8 +125,7 @@ if uploaded_files:
                 # Desglose de Persona
                 with col_demo1:
                     st.markdown("#### 👤 Perfil Predominante (`persona`) por Segmento")
-                    persona_summary = df_targets.groupby(['bucket_name', 'persona'])['student_id'].count().unstack().fillna(0)
-                    # Convertir a porcentaje por fila
+                    persona_summary = df_targets.groupby([bucket_col, 'persona'])['student_id'].count().unstack().fillna(0)
                     persona_pct = persona_summary.div(persona_summary.sum(axis=1), axis=0) * 100
                     st.dataframe(persona_pct.round(1).astype(str) + " %", use_container_width=True)
 
@@ -132,14 +135,11 @@ if uploaded_files:
                     redeemer_cols = [c for c in df_targets.columns if 'redeemer_' in c]
                     
                     if redeemer_cols:
-                        redemption_pct = (df_targets.groupby('bucket_name')[redeemer_cols].mean() * 100).round(1)
-                        # Renombrar columnas quitando el prefijo para mayor claridad
+                        redemption_pct = (df_targets.groupby(bucket_col)[redeemer_cols].mean() * 100).round(1)
                         redemption_pct.columns = [c.replace('redeemer_', '').capitalize() for c in redemption_pct.columns]
                         st.dataframe(redemption_pct, use_container_width=True)
-                    else:
-                        st.warning("No se encontraron columnas `redeemer_...` en los datos.")
 
-                # Gráfico comparativo de canjes principales
+                # Gráfico comparativo
                 if redeemer_cols:
                     st.markdown("#### 📊 Comparativa Visual de Canjes Principales")
                     top_products = ['Bigmac', 'Nuggets', 'Fries', 'Quarterpounder', 'Cheeseburger']
@@ -147,19 +147,46 @@ if uploaded_files:
                     if avail_top:
                         st.bar_chart(redemption_pct[avail_top])
 
-            # --- SECCIÓN 4: ESTRATEGIA Y RECOMENDACIÓN DE NEGOCIO ---
+            # --- SECCIÓN 4: ENGAGEMENT POR FIDELIZACIÓN (NUEVO) ---
             st.markdown("---")
-            st.subheader("4. Argumentario de Negocio para la Presentación (3 Diapositivas)")
+            st.subheader("4. Nivel de Engagement por Fidelización (11 Segmentos)")
+
+            if not has_details:
+                st.info("ℹ️ Carga `Customers_details.csv` para ver las métricas completas de lealtad de los 11 segmentos.")
+            else:
+                redeemer_cols_all = [c for c in merged_data.columns if 'redeemer_' in c]
+                merged_data['total_canjes_familias'] = merged_data[redeemer_cols_all].sum(axis=1)
+
+                loyalty_engagement = merged_data.groupby(bucket_col).agg(
+                    pct_usuarios_que_canjean=('points_burned', lambda x: (x < 0).mean() * 100),
+                    puntos_ganados_media=('points_earned', 'mean'),
+                    puntos_canjeados_media=('points_burned', 'mean'),
+                    saldo_puntos_media=('points_balance', 'mean'),
+                    familias_productos_canjeadas=('total_canjes_familias', 'mean')
+                ).reset_index()
+
+                loyalty_engagement.rename(columns={bucket_col: 'Segmento'}, inplace=True)
+                loyalty_engagement['pct_usuarios_que_canjean'] = loyalty_engagement['pct_usuarios_que_canjean'].round(1).astype(str) + " %"
+                loyalty_engagement['puntos_ganados_media'] = loyalty_engagement['puntos_ganados_media'].round(0)
+                loyalty_engagement['puntos_canjeados_media'] = loyalty_engagement['puntos_canjeados_media'].round(0)
+                loyalty_engagement['saldo_puntos_media'] = loyalty_engagement['saldo_puntos_media'].round(0)
+                loyalty_engagement['familias_productos_canjeadas'] = loyalty_engagement['familias_productos_canjeadas'].round(2)
+
+                st.dataframe(loyalty_engagement, use_container_width=True)
+
+            # --- SECCIÓN 5: ESTRATEGIA Y RECOMENDACIÓN DE NEGOCIO ---
+            st.markdown("---")
+            st.subheader("5. Argumentario de Negocio para la Presentación (3 Diapositivas)")
             
             st.markdown("""
             * **Diapositiva 1: Protegemos a la cúspide (`1. Champions`)**
-                * *Diagnóstico:* 7.516 usuarios inyectan 2,71 M€ (24,7 compras/año). Dominados por **Engaged Family Member (39,0%)** y **Drive and Snack (26,5%)**.
-                * *Acción:* Cero descuentos en dinero. Campañas de canje de puntos acumulados (`points_balance` promedio ~991 pts) enfocadas en sus productos favoritos: **Big Mac (14,2%)** y **McNuggets (13,4%)**.
+                * *Diagnóstico:* 7.516 usuarios inyectan 2,71 M€ (24,7 compras/año). Dominados por **Engaged Family Member (39,0%)**. Tienen un engagement récord (**98,7% utiliza sus puntos**).
+                * *Acción:* Cero descuentos directos. Campañas de aceleración de puntos acumulados (`points_balance` ~991 pts) enfocadas en sus canjes favoritos: **Big Mac (14,2%)** y **McNuggets (13,4%)**.
             * **Diapositiva 2: Escalamos la clase media (`2. Loyal Active`)**
-                * *Diagnóstico:* 5.058 usuarios con el mismo ticket medio (14,27 €) pero la mitad de frecuencia (12,7 compras/año). Mezcla de **Drive and Snack (29,2%)** y **Engaged Family Member (29,0%)**.
+                * *Diagnóstico:* 5.058 usuarios con el mismo ticket medio (14,27 €) pero la mitad de frecuencia (12,7 compras/año). Engagement muy alto en lealtad (**94,4% de penetración**).
                 * *Acción:* Retos condicionados por Push (45,7% opt-in) para aumentar visitas consecutivas premiando con **Big Mac (13,3%)** o **Patatas Fritas (8,0%)**.
             * **Diapositiva 3: Retención urgente (`6. At Risk`)**
-                * *Diagnóstico:* 6.960 usuarios en enfriamiento (488k € en riesgo de fuga). El algoritmo empieza a etiquetarlos como **Non Transactional Users (22,8%)**.
+                * *Diagnóstico:* 6.960 usuarios en enfriamiento (488k € en riesgo de fuga). Su penetración de lealtad ha caído al **62,3%** y el algoritmo los mueve a **Non Transactional Users (22,8%)**.
                 * *Acción:* Campañas agresivas de *Winback* con cupones (*Deals*) de tiempo limitado vía Push/Email antes de que caigan al segmento *Hibernating*.
             """)
 
