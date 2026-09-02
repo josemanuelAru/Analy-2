@@ -73,46 +73,46 @@ if uploaded_files:
             # Normalizar nombre de la columna bucket_name tras los cruces
             bucket_col = [c for c in merged_data.columns if 'bucket_name' in c][0]
 
-            # Lista de todos los segmentos únicos disponibles
-            all_available_segments = sorted(merged_data[bucket_col].dropna().unique().tolist())
-
-            # --- SECCIÓN DE FILTRADO GLOBAL DINÁMICO ---
+            # --- SECCIÓN 1: COMPARATIVA GLOBAL DE TODOS LOS 11 SEGMENTOS ---
             st.markdown("---")
-            st.subheader("🎯 Seleccionar Segmento(s) a Analizar")
+            st.subheader("1. Visión General de Todos los Segmentos RFM (11 Segmentos)")
+            
+            segment_table_all = merged_data.groupby(bucket_col).agg(
+                usuarios=('student_id', 'count'),
+                gasto_total_eur=('gasto_total', 'sum'),
+                ticket_medio_eur=('ticket_medio', 'mean'),
+                frecuencia_media=('frecuencia', 'mean')
+            ).reset_index()
+
+            segment_table_all.rename(columns={bucket_col: 'Segmento'}, inplace=True)
+            segment_table_all['ticket_medio_eur'] = segment_table_all['ticket_medio_eur'].round(2)
+            segment_table_all['frecuencia_media'] = segment_table_all['frecuencia_media'].round(1)
+            segment_table_all['gasto_total_eur'] = segment_table_all['gasto_total_eur'].round(2)
+
+            # Mostrar TODOS los segmentos en la primera tabla
+            st.dataframe(segment_table_all.sort_values(by='gasto_total_eur', ascending=False), use_container_width=True)
+
+            # --- SECCIÓN DE FILTRADO DINÁMICO (DEBAJO DE LA TABLA GENERAL) ---
+            st.markdown("---")
+            st.subheader("🎯 Seleccionar Segmento(s) a Analizar en Detalle")
+            
+            all_available_segments = sorted(merged_data[bucket_col].dropna().unique().tolist())
             
             selected_buckets = st.multiselect(
-                "Elige los segmentos que quieres visualizar en todo el panel (puedes borrar o añadir los que quieras):",
+                "Elige los segmentos que quieres desplegar en las secciones inferiores (puedes añadir o borrar libremente):",
                 options=all_available_segments,
                 default=['1. Champions', '2. Loyal Active', '6. At Risk']
             )
 
             if not selected_buckets:
-                st.warning("👆 Por favor selecciona al menos un segmento arriba para ver los datos.")
+                st.warning("👆 Por favor selecciona al menos un segmento arriba para profundizar en los detalles inferiores.")
             else:
-                # Filtrar dataframe con la selección actual del usuario
+                # Dataframe filtrado por la selección del usuario
                 filtered_merged = merged_data[merged_data[bucket_col].isin(selected_buckets)]
-
-                # --- SECCIÓN 1: VISIÓN GENERAL DE SEGMENTOS SELECCIONADOS ---
-                st.markdown("---")
-                st.subheader("1. Visión General de los Segmentos Seleccionados")
-                
-                segment_table = filtered_merged.groupby(bucket_col).agg(
-                    usuarios=('student_id', 'count'),
-                    gasto_total_eur=('gasto_total', 'sum'),
-                    ticket_medio_eur=('ticket_medio', 'mean'),
-                    frecuencia_media=('frecuencia', 'mean')
-                ).reset_index()
-
-                segment_table.rename(columns={bucket_col: 'Segmento'}, inplace=True)
-                segment_table['ticket_medio_eur'] = segment_table['ticket_medio_eur'].round(2)
-                segment_table['frecuencia_media'] = segment_table['frecuencia_media'].round(1)
-                segment_table['gasto_total_eur'] = segment_table['gasto_total_eur'].round(2)
-
-                st.dataframe(segment_table.sort_values(by='gasto_total_eur', ascending=False), use_container_width=True)
 
                 # --- SECCIÓN 2: DEFENSA DE LOS SEGMENTOS SELECCIONADOS ---
                 st.markdown("---")
-                st.subheader("2. Ficha Comparativa de los Segmentos Filtrados")
+                st.subheader("2. Ficha Comparativa de los Segmentos Seleccionados")
 
                 cols = st.columns(len(selected_buckets))
 
@@ -155,7 +155,7 @@ if uploaded_files:
 
                 # --- SECCIÓN 4: ENGAGEMENT POR FIDELIZACIÓN ---
                 st.markdown("---")
-                st.subheader("4. Nivel de Engagement por Fidelización (Filtro Activo)")
+                st.subheader("4. Nivel de Engagement por Fidelización (Segmentos Seleccionados)")
 
                 if not has_details:
                     st.info("ℹ️ Carga `Customers_details.csv` para ver las métricas de lealtad.")
@@ -184,7 +184,7 @@ if uploaded_files:
 
                 # --- SECCIÓN 5: ESTRATEGIA Y RECOMENDACIÓN DE NEGOCIO ---
                 st.markdown("---")
-                st.subheader("5. Argumentario de Negocio para la Presentación")
+                st.subheader("5. Argumentario de Negocio para la Presentación (3 Diapositivas)")
                 
                 st.markdown("""
                 * **Diapositiva 1: Protegemos a la cúspide (`1. Champions`)**
