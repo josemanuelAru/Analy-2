@@ -132,66 +132,73 @@ if uploaded_files:
                         if 'push_optin' in df_seg.columns:
                             st.write(f"📲 **Notificaciones Push:** {df_seg['push_optin'].mean()*100:.1f}%")
 
-                # --- SECCIÓN 3: PERFIL DEMOGRÁFICO Y CANJES ---
+                # --- SECCIÓN 3: PERFIL DEMOGRÁFICO Y CANJES DESGLOSADO POR GRUPO DE EDAD ---
                 st.markdown("---")
-                st.subheader("3. Perfil Demográfico (`persona`) y Hábitos de Canje (`redeemer_...`)")
+                st.subheader("3. Perfil Demográfico (`persona`) y Hábitos de Canje (`redeemer_...`) desglosados por Grupo de Edad (`age_group`)")
 
                 if not has_details:
-                    st.info("ℹ️ Sube el archivo `Customers_details.csv` en la barra lateral para desbloquear el desglose por tipo de Persona.")
+                    st.info("ℹ️ Sube el archivo `Customers_details.csv` en la barra lateral para desbloquear el desglose por Persona y Edad.")
                 else:
                     col_demo1, col_demo2 = st.columns(2)
 
+                    # A. Persona desglosado por Segmento + age_group
                     with col_demo1:
-                        st.markdown("#### 👤 Perfil Predominante (`persona`)")
-                        persona_summary = filtered_merged.groupby([bucket_col, 'persona'])['student_id'].count().unstack().fillna(0)
-                        persona_pct = persona_summary.div(persona_summary.sum(axis=1), axis=0) * 100
-                        st.dataframe(persona_pct.round(1).astype(str) + " %", use_container_width=True)
+                        st.markdown("#### 👤 Perfil Predominante (`persona`) por Segmento y Edad")
+                        if 'age_group' in filtered_merged.columns:
+                            persona_summary = filtered_merged.groupby([bucket_col, 'age_group', 'persona'])['student_id'].count().unstack().fillna(0)
+                            persona_pct = persona_summary.div(persona_summary.sum(axis=1), axis=0) * 100
+                            st.dataframe(persona_pct.round(1).astype(str) + " %", use_container_width=True)
+                        else:
+                            persona_summary = filtered_merged.groupby([bucket_col, 'persona'])['student_id'].count().unstack().fillna(0)
+                            persona_pct = persona_summary.div(persona_summary.sum(axis=1), axis=0) * 100
+                            st.dataframe(persona_pct.round(1).astype(str) + " %", use_container_width=True)
 
+                    # B. Canjes desglosados por Segmento + age_group
                     with col_demo2:
-                        st.markdown("#### 🍟 Hábitos de Canje de Productos (`redeemer_...`)")
+                        st.markdown("#### 🍟 Hábitos de Canje (`redeemer_...`) por Segmento y Edad")
                         redeemer_cols_all = [c for c in filtered_merged.columns if 'redeemer_' in c]
                         if redeemer_cols_all:
-                            redemption_pct = (filtered_merged.groupby(bucket_col)[redeemer_cols_all].mean() * 100).round(1)
+                            if 'age_group' in filtered_merged.columns:
+                                redemption_pct = (filtered_merged.groupby([bucket_col, 'age_group'])[redeemer_cols_all].mean() * 100).round(1)
+                            else:
+                                redemption_pct = (filtered_merged.groupby(bucket_col)[redeemer_cols_all].mean() * 100).round(1)
+                            
                             redemption_pct.columns = [c.replace('redeemer_', '').capitalize() for c in redemption_pct.columns]
                             st.dataframe(redemption_pct, use_container_width=True)
 
-                # --- SECCIÓN 4: ANÁLISIS DETALLADO DE COMPRAS, OFERTAS Y EDAD (ventas.csv + Offers.csv + age_group) ---
+                # --- SECCIÓN 4: ANÁLISIS DETALLADO DE COMPRAS Y HORARIOS POR GRUPO DE EDAD ---
                 st.markdown("---")
-                st.subheader("4. ¿Qué Compran Exactamente? — Análisis por Edad (`age_group`), Ofertas (`Offers.csv`) y Horarios (`daypart`)")
+                st.subheader("4. ¿Qué Compran Exactamente? — Horarios (`daypart`) y Ofertas (`Offers.csv`) por Grupo de Edad")
 
-                # A. Desglose por Edad
-                if 'age_group' in filtered_merged.columns:
-                    st.markdown("#### 🎂 Distribución por Rango de Edad (`age_group`)")
-                    age_summary = filtered_merged.groupby([bucket_col, 'age_group'])['student_id'].count().unstack().fillna(0)
-                    age_pct = age_summary.div(age_summary.sum(axis=1), axis=0) * 100
-                    st.dataframe(age_pct.round(1).astype(str) + " %", use_container_width=True)
-
-                # B. Momento del día (daypart)
+                # A. Momento del día (daypart) desglosado por Segmento + age_group
                 if 'daypart' in df_ventas.columns:
-                    st.markdown("#### ⏰ Distribución por Franja Horaria de Compra (`daypart`)")
-                    ventas_targets = df_ventas[df_ventas['bucket_name'].isin(selected_buckets)]
-                    daypart_summary = ventas_targets.groupby(['bucket_name', 'daypart'])['sale_id'].nunique().unstack().fillna(0)
+                    st.markdown("#### ⏰ Distribución Horaria (`daypart`) por Segmento y Edad")
+                    ventas_targets = df_ventas[df_ventas['bucket_name'].isin(selected_buckets)].copy()
+                    
+                    if has_details and 'age_group' in df_details.columns:
+                        ventas_targets = pd.merge(ventas_targets, df_details[['student_id', 'age_group']], on='student_id', how='left')
+                        daypart_summary = ventas_targets.groupby(['bucket_name', 'age_group', 'daypart'])['sale_id'].nunique().unstack().fillna(0)
+                    else:
+                        daypart_summary = ventas_targets.groupby(['bucket_name', 'daypart'])['sale_id'].nunique().unstack().fillna(0)
+                        
                     daypart_pct = daypart_summary.div(daypart_summary.sum(axis=1), axis=0) * 100
                     st.dataframe(daypart_pct.round(1).astype(str) + " %", use_container_width=True)
 
-                # C. Cruce exacto con Offers.csv con filtro de Rango de Edad
+                # B. Cruce de Ofertas con Offers.csv
                 if not has_offers:
                     st.info("ℹ️ Carga el archivo `Offers.csv` para ver las ofertas y promociones específicas que compran estos usuarios.")
                 else:
-                    st.markdown("#### 🏷️ Ranking de Ofertas y Menús Comprados (`Offers.csv`)")
+                    st.markdown("#### 🏷️ Ranking Completo de Ofertas y Menús Comprados (`Offers.csv`)")
                     df_offers = dfs[offers_file[0]]
 
-                    # Filtrar ventas de los segmentos seleccionados con ofertas
                     ventas_with_offers = df_ventas[df_ventas['bucket_name'].isin(selected_buckets)].dropna(subset=['offerids']).copy()
 
                     if ventas_with_offers.empty:
                         st.info("No hay registros de compras con ofertas para los segmentos seleccionados.")
                     else:
-                        # Si tenemos age_group en Customers_details, lo cruzamos con las ventas por student_id
                         if has_details and 'age_group' in df_details.columns:
                             ventas_with_offers = pd.merge(ventas_with_offers, df_details[['student_id', 'age_group']], on='student_id', how='left')
 
-                        # Explotar offerids separados por comas
                         ventas_with_offers['offer_id_raw'] = ventas_with_offers['offerids'].astype(str).str.split(',')
                         exploded_ventas = ventas_with_offers.explode('offer_id_raw')
                         exploded_ventas['offer_id_clean'] = exploded_ventas['offer_id_raw'].str.strip()
@@ -201,13 +208,12 @@ if uploaded_files:
                             lambda x: int(x[3:]) if str(x).startswith('500') and len(str(x)) > 3 and str(x)[3:].isdigit() else None
                         )
 
-                        # Cruce con Offers.csv
                         merged_offers = pd.merge(exploded_ventas, df_offers, on='offer_id', how='inner')
 
-                        # Filtro interactivo por Rango de Edad si existe la columna
+                        # Filtro interactivo opcional por Rango de Edad
                         if 'age_group' in merged_offers.columns:
                             avail_ages = ["-- Todos los Rangos de Edad --"] + sorted([str(a) for a in merged_offers['age_group'].dropna().unique()])
-                            selected_age = st.selectbox("Filtrar ofertas por Rango de Edad (`age_group`):", options=avail_ages)
+                            selected_age = st.selectbox("Filtrar la tabla de ofertas por Rango de Edad específico (`age_group`):", options=avail_ages)
 
                             if selected_age != "-- Todos los Rangos de Edad --":
                                 merged_offers = merged_offers[merged_offers['age_group'] == selected_age]
