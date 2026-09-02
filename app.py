@@ -113,41 +113,19 @@ if uploaded_files:
                     if 'push_optin' in df_seg.columns:
                         st.write(f"📲 **Aceptan Notificaciones Push:** {df_seg['push_optin'].mean()*100:.1f}%")
 
-            # --- SECCIÓN 3: PERFIL DEMOGRÁFICO Y CANJES ---
+            # --- SECCIÓN 3: PERFIL DEMOGRÁFICO ---
             st.markdown("---")
-            st.subheader("3. Perfil Demográfico (`persona`) y Hábitos de Canje (`redeemer_...`)")
+            st.subheader("3. Perfil Demográfico (`persona`) de los Segmentos Prioritarios")
 
             if not has_details:
-                st.info("ℹ️ Sube el archivo `Customers_details.csv` en la barra lateral para desbloquear el desglose por tipo de Persona y Canjes de Productos.")
+                st.info("ℹ️ Sube el archivo `Customers_details.csv` en la barra lateral para desbloquear el desglose por tipo de Persona.")
             else:
-                col_demo1, col_demo2 = st.columns(2)
+                st.markdown("#### 👤 Perfil Predominante (`persona`) por Segmento")
+                persona_summary = df_targets.groupby([bucket_col, 'persona'])['student_id'].count().unstack().fillna(0)
+                persona_pct = persona_summary.div(persona_summary.sum(axis=1), axis=0) * 100
+                st.dataframe(persona_pct.round(1).astype(str) + " %", use_container_width=True)
 
-                # Desglose de Persona
-                with col_demo1:
-                    st.markdown("#### 👤 Perfil Predominante (`persona`) por Segmento")
-                    persona_summary = df_targets.groupby([bucket_col, 'persona'])['student_id'].count().unstack().fillna(0)
-                    persona_pct = persona_summary.div(persona_summary.sum(axis=1), axis=0) * 100
-                    st.dataframe(persona_pct.round(1).astype(str) + " %", use_container_width=True)
-
-                # Desglose de Canjes
-                with col_demo2:
-                    st.markdown("#### 🍟 Top Productos Canjeados (`redeemer_...`) por Segmento")
-                    redeemer_cols = [c for c in df_targets.columns if 'redeemer_' in c]
-                    
-                    if redeemer_cols:
-                        redemption_pct = (df_targets.groupby(bucket_col)[redeemer_cols].mean() * 100).round(1)
-                        redemption_pct.columns = [c.replace('redeemer_', '').capitalize() for c in redemption_pct.columns]
-                        st.dataframe(redemption_pct, use_container_width=True)
-
-                # Gráfico comparativo
-                if redeemer_cols:
-                    st.markdown("#### 📊 Comparativa Visual de Canjes Principales")
-                    top_products = ['Bigmac', 'Nuggets', 'Fries', 'Quarterpounder', 'Cheeseburger']
-                    avail_top = [p for p in top_products if p in redemption_pct.columns]
-                    if avail_top:
-                        st.bar_chart(redemption_pct[avail_top])
-
-            # --- SECCIÓN 4: ENGAGEMENT POR FIDELIZACIÓN (NUEVO) ---
+            # --- SECCIÓN 4: ENGAGEMENT POR FIDELIZACIÓN INTERACTIVO ---
             st.markdown("---")
             st.subheader("4. Nivel de Engagement por Fidelización (11 Segmentos)")
 
@@ -166,13 +144,46 @@ if uploaded_files:
                 ).reset_index()
 
                 loyalty_engagement.rename(columns={bucket_col: 'Segmento'}, inplace=True)
-                loyalty_engagement['pct_usuarios_que_canjean'] = loyalty_engagement['pct_usuarios_que_canjean'].round(1).astype(str) + " %"
-                loyalty_engagement['puntos_ganados_media'] = loyalty_engagement['puntos_ganados_media'].round(0)
-                loyalty_engagement['puntos_canjeados_media'] = loyalty_engagement['puntos_canjeados_media'].round(0)
-                loyalty_engagement['saldo_puntos_media'] = loyalty_engagement['saldo_puntos_media'].round(0)
-                loyalty_engagement['familias_productos_canjeadas'] = loyalty_engagement['familias_productos_canjeadas'].round(2)
+                
+                # Crear versión visual formateada de la tabla
+                loyalty_display = loyalty_engagement.copy()
+                loyalty_display['pct_usuarios_que_canjean'] = loyalty_display['pct_usuarios_que_canjean'].round(1).astype(str) + " %"
+                loyalty_display['puntos_ganados_media'] = loyalty_display['puntos_ganados_media'].round(0)
+                loyalty_display['puntos_canjeados_media'] = loyalty_display['puntos_canjeados_media'].round(0)
+                loyalty_display['saldo_puntos_media'] = loyalty_display['saldo_puntos_media'].round(0)
+                loyalty_display['familias_productos_canjeadas'] = loyalty_display['familias_productos_canjeadas'].round(2)
 
-                st.dataframe(loyalty_engagement, use_container_width=True)
+                st.dataframe(loyalty_display, use_container_width=True)
+
+                # --- SELECTOR INTERACTIVO Y DESGLOSE DE PRODUCTOS ---
+                st.markdown("### 🍟 Top Productos Canjeados por Segmento")
+                all_segments = sorted(merged_data[bucket_col].dropna().unique().tolist())
+                
+                selected_segment = st.selectbox(
+                    "Selecciona un segmento para ver sus productos más canjeados:",
+                    options=all_segments
+                )
+
+                if selected_segment and redeemer_cols_all:
+                    df_selected_seg = merged_data[merged_data[bucket_col] == selected_segment]
+                    
+                    # Calcular porcentaje de canje por producto en el segmento seleccionado
+                    product_redemptions = (df_selected_seg[redeemer_cols_all].mean() * 100).round(1).reset_index()
+                    product_redemptions.columns = ['Producto', 'Porcentaje de Canje (%)']
+                    product_redemptions['Producto'] = product_redemptions['Producto'].str.replace('redeemer_', '').str.capitalize()
+                    
+                    # Ordenar de mayor a menor
+                    product_redemptions = product_redemptions.sort_values(by='Porcentaje de Canje (%)', ascending=False).reset_index(drop=True)
+
+                    col_table, col_chart = st.columns([1, 1])
+
+                    with col_table:
+                        st.markdown(f"**Ranking de Canjes en `{selected_segment}`:**")
+                        st.dataframe(product_redemptions, use_container_width=True)
+
+                    with col_chart:
+                        st.markdown(f"**Gráfico de Canjes en `{selected_segment}`:**")
+                        st.bar_chart(product_redemptions.set_index('Producto'))
 
             # --- SECCIÓN 5: ESTRATEGIA Y RECOMENDACIÓN DE NEGOCIO ---
             st.markdown("---")
