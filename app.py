@@ -9,7 +9,7 @@ st.set_page_config(
 )
 
 st.title("🍔 McDonald's NL — CRM & Customer Analytics Dashboard")
-st.write("Carga tus archivos CSV del caso práctico (`clientes.csv`, `ventas.csv`, `Customers_details.csv`, `Campañas.csv`, etc.) para realizar el análisis interactivo.")
+st.write("Carga tus archivos CSV del caso práctico (`clientes.csv`, `ventas.csv`, `Customers_details.csv`, `Offers.csv`, `Campañas.csv`, etc.) para realizar el análisis interactivo.")
 
 # Sidebar: Carga de archivos
 st.sidebar.header("1. Cargar Archivos CSV")
@@ -70,6 +70,10 @@ if uploaded_files:
                 cols_to_use = [c for c in df_details.columns if c not in merged_data.columns or c == 'student_id']
                 merged_data = pd.merge(merged_data, df_details[cols_to_use], on='student_id', how='left')
 
+            # Verificar si está cargado Offers.csv
+            offers_file = [name for name in dfs.keys() if "offers" in name.lower()]
+            has_offers = len(offers_file) > 0
+
             # Normalizar nombre de la columna bucket_name tras los cruces
             bucket_col = [c for c in merged_data.columns if 'bucket_name' in c][0]
 
@@ -89,10 +93,9 @@ if uploaded_files:
             segment_table_all['frecuencia_media'] = segment_table_all['frecuencia_media'].round(1)
             segment_table_all['gasto_total_eur'] = segment_table_all['gasto_total_eur'].round(2)
 
-            # Mostrar TODOS los segmentos en la primera tabla
             st.dataframe(segment_table_all.sort_values(by='gasto_total_eur', ascending=False), use_container_width=True)
 
-            # --- SECCIÓN DE FILTRADO DINÁMICO (DEBAJO DE LA TABLA GENERAL) ---
+            # --- SECCIÓN DE FILTRADO DINÁMICO ---
             st.markdown("---")
             st.subheader("🎯 Seleccionar Segmento(s) a Analizar en Detalle")
             
@@ -107,7 +110,6 @@ if uploaded_files:
             if not selected_buckets:
                 st.warning("👆 Por favor selecciona al menos un segmento arriba para profundizar en los detalles inferiores.")
             else:
-                # Dataframe filtrado por la selección del usuario
                 filtered_merged = merged_data[merged_data[bucket_col].isin(selected_buckets)]
 
                 # --- SECCIÓN 2: DEFENSA DE LOS SEGMENTOS SELECCIONADOS ---
@@ -153,9 +155,63 @@ if uploaded_files:
                             redemption_pct.columns = [c.replace('redeemer_', '').capitalize() for c in redemption_pct.columns]
                             st.dataframe(redemption_pct, use_container_width=True)
 
-                # --- SECCIÓN 4: ENGAGEMENT POR FIDELIZACIÓN ---
+                # --- SECCIÓN 4: ANÁLISIS DETALLADO DE COMPRAS Y OFERTAS (ventas.csv + Offers.csv) ---
                 st.markdown("---")
-                st.subheader("4. Nivel de Engagement por Fidelización (Segmentos Seleccionados)")
+                st.subheader("4. ¿Qué Compran Exactamente? — Análisis de Ofertas (`Offers.csv`) y Horarios (`daypart`)")
+
+                # A. Momento del día (daypart)
+                if 'daypart' in df_ventas.columns:
+                    st.markdown("#### ⏰ Distribución por Franja Horaria de Compra (`daypart`)")
+                    ventas_targets = df_ventas[df_ventas['bucket_name'].isin(selected_buckets)]
+                    daypart_summary = ventas_targets.groupby(['bucket_name', 'daypart'])['sale_id'].nunique().unstack().fillna(0)
+                    daypart_pct = daypart_summary.div(daypart_summary.sum(axis=1), axis=0) * 100
+                    st.dataframe(daypart_pct.round(1).astype(str) + " %", use_container_width=True)
+
+                # B. Cruce exacto con Offers.csv (Limpiando prefijo 500)
+                if not has_offers:
+                    st.info("ℹ️ Carga el archivo `Offers.csv` para ver las ofertas y promociones específicas que compran estos usuarios.")
+                else:
+                    st.markdown("#### 🏷️ Top Ofertas y Menús Comprados (`Offers.csv`)")
+                    df_offers = dfs[offers_file[0]]
+
+                    # Filtrar ventas de los segmentos seleccionados con ofertas
+                    ventas_with_offers = df_ventas[df_ventas['bucket_name'].isin(selected_buckets)].dropna(subset=['offerids']).copy()
+
+                    if ventas_with_offers.empty:
+                        st.info("No hay registros de compras con ofertas para los segmentos seleccionados.")
+                    else:
+                        # Explotar offerids separados por comas
+                        ventas_with_offers['offer_id_raw'] = ventas_with_offers['offerids'].astype(str).str.split(',')
+                        exploded_ventas = ventas_with_offers.explode('offer_id_raw')
+                        exploded_ventas['offer_id_clean'] = exploded_ventas['offer_id_raw'].str.strip()
+
+                        # PRECAUCIÓN: Eliminar el prefijo '500' de cada offer_id
+                        exploded_ventas['offer_id'] = exploded_ventas['offer_id_clean'].apply(
+                            lambda x: int(x[3:]) if str(x).startswith('500') and len(str(x)) > 3 and str(x)[3:].isdigit() else None
+                        )
+
+                        # Cruce con Offers.csv
+                        merged_offers = pd.merge(exploded_ventas, df_offers, on='offer_id', how='inner')
+
+                        col_off1, col_demo2 = st.columns(2)
+
+                        with col_off1:
+                            st.markdown("**Top 10 Títulos de Ofertas/Menús Más Comprados:**")
+                            top_titles = merged_offers.groupby(['bucket_name', 'title'])['sale_id'].count().reset_index()
+                            top_titles.columns = ['Segmento', 'Título Oferta / Producto', 'Veces Comprado']
+                            top_titles = top_titles.sort_values(by='Veces Comprado', ascending=False).groupby('Segmento').head(5)
+                            st.dataframe(top_titles, use_container_width=True)
+
+                        with col_demo2:
+                            st.markdown("**Estrategia de Marketing Usada (`marketing_sublayer`):**")
+                            if 'marketing_sublayer' in merged_offers.columns:
+                                sublayer_summary = merged_offers.groupby(['bucket_name', 'marketing_sublayer'])['sale_id'].count().unstack().fillna(0)
+                                sublayer_pct = sublayer_summary.div(sublayer_summary.sum(axis=1), axis=0) * 100
+                                st.dataframe(sublayer_pct.round(1).astype(str) + " %", use_container_width=True)
+
+                # --- SECCIÓN 5: ENGAGEMENT POR FIDELIZACIÓN ---
+                st.markdown("---")
+                st.subheader("5. Nivel de Engagement por Fidelización (Segmentos Seleccionados)")
 
                 if not has_details:
                     st.info("ℹ️ Carga `Customers_details.csv` para ver las métricas de lealtad.")
@@ -182,9 +238,9 @@ if uploaded_files:
 
                     st.dataframe(loyalty_display, use_container_width=True)
 
-                # --- SECCIÓN 5: ESTRATEGIA Y RECOMENDACIÓN DE NEGOCIO ---
+                # --- SECCIÓN 6: ESTRATEGIA Y RECOMENDACIÓN DE NEGOCIO ---
                 st.markdown("---")
-                st.subheader("5. Argumentario de Negocio para la Presentación (3 Diapositivas)")
+                st.subheader("6. Argumentario de Negocio para la Presentación (3 Diapositivas)")
                 
                 st.markdown("""
                 * **Diapositiva 1: Protegemos a la cúspide (`1. Champions`)**
