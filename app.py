@@ -25,11 +25,8 @@ if uploaded_files:
     for file in uploaded_files:
         try:
             if file.name.endswith('.zip'):
-                # Usar zipfile para abrir el archivo y saltarse la basura de Mac (__MACOSX)
                 with zipfile.ZipFile(file, 'r') as z:
-                    # Extraer solo los nombres que terminen en .csv y no sean archivos ocultos de Mac
                     csv_files = [f for f in z.namelist() if f.endswith('.csv') and not f.startswith('__MACOSX') and not f.split('/')[-1].startswith('.')]
-                    
                     if csv_files:
                         with z.open(csv_files[0]) as f:
                             dfs[file.name] = pd.read_csv(f)
@@ -108,14 +105,14 @@ if uploaded_files:
 
             st.dataframe(segment_table_all.sort_values(by='gasto_total_eur', ascending=False), use_container_width=True)
 
-            # --- SECCIÓN DE FILTRADO DINÁMICO ---
+            # --- SECCIÓN DE FILTRADO DINÁMICO GLOBALES ---
             st.markdown("---")
-            st.subheader("🎯 Seleccionar Segmento(s) a Analizar en Detalle")
+            st.subheader("🎯 Seleccionar Filtros a Analizar en Detalle")
             
             all_available_segments = sorted(merged_data[bucket_col].dropna().unique().tolist())
             
             selected_buckets = st.multiselect(
-                "Elige los segmentos que quieres desplegar en las secciones inferiores (puedes añadir o borrar libremente):",
+                "1. Elige los segmentos (Segmentos RFM):",
                 options=all_available_segments,
                 default=['1. Champions', '2. Loyal Active', '6. At Risk']
             )
@@ -123,230 +120,220 @@ if uploaded_files:
             if not selected_buckets:
                 st.warning("👆 Por favor selecciona al menos un segmento arriba para profundizar en los detalles inferiores.")
             else:
+                # Aplicar filtro de segmento
                 filtered_merged = merged_data[merged_data[bucket_col].isin(selected_buckets)]
 
-                # --- SECCIÓN 2: DEFENSA DE LOS SEGMENTOS SELECCIONADOS ---
-                st.markdown("---")
-                st.subheader("2. Ficha Comparativa de los Segmentos Seleccionados")
+                # Filtros opcionales de Edad y Persona
+                if has_details:
+                    col_filt1, col_filt2 = st.columns(2)
+                    with col_filt1:
+                        if 'age_group' in filtered_merged.columns:
+                            avail_ages = ["-- Todos los Rangos --"] + sorted([str(a) for a in filtered_merged['age_group'].dropna().unique()])
+                            sel_age = st.selectbox("2. Filtrar por Grupo de Edad:", options=avail_ages)
+                            if sel_age != "-- Todos los Rangos --":
+                                filtered_merged = filtered_merged[filtered_merged['age_group'] == sel_age]
+                                
+                    with col_filt2:
+                        if 'persona' in filtered_merged.columns:
+                            avail_personas = ["-- Todos los Perfiles --"] + sorted([str(p) for p in filtered_merged['persona'].dropna().unique()])
+                            sel_persona = st.selectbox("3. Filtrar por Perfil (`persona`):", options=avail_personas)
+                            if sel_persona != "-- Todos los Perfiles --":
+                                filtered_merged = filtered_merged[filtered_merged['persona'] == sel_persona]
 
-                cols = st.columns(len(selected_buckets))
-
-                for idx, (col, seg) in enumerate(zip(cols, selected_buckets)):
-                    df_seg = filtered_merged[filtered_merged[bucket_col] == seg]
-                    with col:
-                        st.markdown(f"### `{seg}`")
-                        st.metric("Usuarios Únicos", f"{len(df_seg):,}")
-                        st.metric("Ticket Medio", f"{df_seg['ticket_medio'].mean():.2f} €")
-                        st.metric("Frecuencia Anual", f"{df_seg['frecuencia'].mean():.1f} visitas")
-                        st.metric("Gasto Total", f"{df_seg['gasto_total'].sum():,.2f} €")
-
-                        if 'points_balance' in df_seg.columns:
-                            st.write(f"🏅 **Puntos (media):** {df_seg['points_balance'].mean():,.0f} pts")
-                        if 'push_optin' in df_seg.columns:
-                            st.write(f"📲 **Notificaciones Push:** {df_seg['push_optin'].mean()*100:.1f}%")
-
-                # --- SECCIÓN 3: PERFIL DEMOGRÁFICO Y CANJES DESGLOSADO POR EDAD Y PERSONA ---
-                st.markdown("---")
-                st.subheader("3. Perfil Demográfico (`persona`) y Hábitos de Canje (`redeemer_...`)")
-
-                if not has_details:
-                    st.info("ℹ️ Sube el archivo `Customers_details.csv` en la barra lateral para desbloquear el desglose por Persona y Edad.")
+                # Verificar si tras los filtros quedan datos
+                if filtered_merged.empty:
+                    st.error("No hay usuarios que cumplan con la combinación de filtros seleccionada.")
                 else:
-                    st.write("Filtra para aislar los hábitos de un grupo de edad o perfil en concreto:")
-                    col_f1, col_f2 = st.columns(2)
-                    
-                    df_sec3 = filtered_merged.copy()
-                    
-                    with col_f1:
-                        if 'age_group' in df_sec3.columns:
-                            avail_ages_sec3 = ["-- Todos los Rangos --"] + sorted([str(a) for a in df_sec3['age_group'].dropna().unique()])
-                            sel_age_sec3 = st.selectbox("Filtrar por Grupo de Edad:", options=avail_ages_sec3, key="age_sec3")
-                            if sel_age_sec3 != "-- Todos los Rangos --":
-                                df_sec3 = df_sec3[df_sec3['age_group'] == sel_age_sec3]
-                                
-                    with col_f2:
-                        if 'persona' in df_sec3.columns:
-                            avail_personas = ["-- Todos los Perfiles --"] + sorted([str(p) for p in df_sec3['persona'].dropna().unique()])
-                            sel_persona_sec3 = st.selectbox("Filtrar por Perfil (`persona`):", options=avail_personas, key="per_sec3")
-                            if sel_persona_sec3 != "-- Todos los Perfiles --":
-                                df_sec3 = df_sec3[df_sec3['persona'] == sel_persona_sec3]
+                    # --- SECCIÓN 2: DEFENSA DE LOS SEGMENTOS SELECCIONADOS ---
+                    st.markdown("---")
+                    st.subheader("2. Ficha Comparativa de los Usuarios Filtrados")
 
-                    col_demo1, col_demo2 = st.columns(2)
+                    cols = st.columns(len(selected_buckets))
 
-                    with col_demo1:
-                        st.markdown("#### 👤 Distribución de Perfiles (`persona`)")
-                        if df_sec3.empty:
-                            st.warning("No hay datos para estos filtros.")
-                        else:
+                    for idx, (col, seg) in enumerate(zip(cols, selected_buckets)):
+                        df_seg = filtered_merged[filtered_merged[bucket_col] == seg]
+                        with col:
+                            st.markdown(f"### `{seg}`")
+                            if df_seg.empty:
+                                st.write("Sin datos para los filtros actuales.")
+                            else:
+                                st.metric("Usuarios Únicos", f"{len(df_seg):,}")
+                                st.metric("Ticket Medio", f"{df_seg['ticket_medio'].mean():.2f} €")
+                                st.metric("Frecuencia Anual", f"{df_seg['frecuencia'].mean():.1f} visitas")
+                                st.metric("Gasto Total", f"{df_seg['gasto_total'].sum():,.2f} €")
+
+                                if 'points_balance' in df_seg.columns:
+                                    st.write(f"🏅 **Puntos (media):** {df_seg['points_balance'].mean():,.0f} pts")
+                                if 'push_optin' in df_seg.columns:
+                                    st.write(f"📲 **Notificaciones Push:** {df_seg['push_optin'].mean()*100:.1f}%")
+
+                    # --- SECCIÓN 3: PERFIL DEMOGRÁFICO Y CANJES ---
+                    st.markdown("---")
+                    st.subheader("3. Perfil Demográfico (`persona`) y Hábitos de Canje (`redeemer_...`)")
+
+                    if not has_details:
+                        st.info("ℹ️ Sube el archivo `Customers_details.csv` en la barra lateral para desbloquear esta sección.")
+                    else:
+                        col_demo1, col_demo2 = st.columns(2)
+
+                        with col_demo1:
+                            st.markdown("#### 👤 Distribución de Perfiles (`persona`)")
                             group_cols_p = [bucket_col]
-                            if 'age_group' in df_sec3.columns and sel_age_sec3 == "-- Todos los Rangos --":
+                            if 'age_group' in filtered_merged.columns:
                                 group_cols_p.append('age_group')
-                                
-                            persona_summary = df_sec3.groupby(group_cols_p + ['persona'])['student_id'].count().unstack().fillna(0)
+                                    
+                            persona_summary = filtered_merged.groupby(group_cols_p + ['persona'])['student_id'].count().unstack().fillna(0)
                             persona_pct = persona_summary.div(persona_summary.sum(axis=1), axis=0) * 100
                             st.dataframe(persona_pct.round(1).astype(str) + " %", use_container_width=True)
 
-                    with col_demo2:
-                        st.markdown("#### 🍟 Hábitos de Canje (`redeemer_...`)")
-                        redeemer_cols_all = [c for c in df_sec3.columns if 'redeemer_' in c]
-                        if redeemer_cols_all and not df_sec3.empty:
-                            group_cols_r = [bucket_col]
-                            if 'age_group' in df_sec3.columns and sel_age_sec3 == "-- Todos los Rangos --":
-                                group_cols_r.append('age_group')
-                            if 'persona' in df_sec3.columns and sel_persona_sec3 == "-- Todos los Perfiles --":
-                                group_cols_r.append('persona')
-                                
-                            redemption_pct = (df_sec3.groupby(group_cols_r)[redeemer_cols_all].mean() * 100).round(1)
-                            redemption_pct.columns = [c.replace('redeemer_', '').capitalize() for c in redemption_pct.columns]
-                            st.dataframe(redemption_pct, use_container_width=True)
-
-                # --- SECCIÓN 4: ANÁLISIS DETALLADO DE COMPRAS Y HORARIOS POR GRUPO DE EDAD ---
-                st.markdown("---")
-                st.subheader("4. ¿Qué Compran Exactamente? — Horarios (`daypart`) y Ofertas (`Offers.csv`) por Grupo de Edad")
-
-                # A. Momento del día (daypart) desglosado por Segmento + age_group
-                if 'daypart' in df_ventas.columns:
-                    st.markdown("#### ⏰ Distribución Horaria (`daypart`) por Segmento y Edad")
-                    ventas_targets = df_ventas[df_ventas['bucket_name'].isin(selected_buckets)].copy()
-                    
-                    # FILTRO NUEVO: Conservar únicamente las franjas horarias que contienen "NL"
-                    ventas_targets = ventas_targets[ventas_targets['daypart'].astype(str).str.contains('NL', case=False, na=False)]
-                    
-                    if has_details and 'age_group' in df_details.columns:
-                        ventas_targets = pd.merge(ventas_targets, df_details[['student_id', 'age_group']], on='student_id', how='left')
-                        daypart_summary = ventas_targets.groupby(['bucket_name', 'age_group', 'daypart'])['sale_id'].nunique().unstack().fillna(0)
-                    else:
-                        daypart_summary = ventas_targets.groupby(['bucket_name', 'daypart'])['sale_id'].nunique().unstack().fillna(0)
-                        
-                    daypart_pct = daypart_summary.div(daypart_summary.sum(axis=1), axis=0) * 100
-                    st.dataframe(daypart_pct.round(1).astype(str) + " %", use_container_width=True)
-
-                # B. Cruce de Ofertas con Offers.csv
-                if not has_offers:
-                    st.info("ℹ️ Carga el archivo `Offers.csv` para ver las ofertas y promociones específicas que compran estos usuarios.")
-                else:
-                    st.markdown("#### 🏷️ Ranking Completo de Ofertas y Menús Comprados (`Offers.csv`)")
-                    df_offers = dfs[offers_file[0]]
-
-                    ventas_with_offers = df_ventas[df_ventas['bucket_name'].isin(selected_buckets)].dropna(subset=['offerids']).copy()
-
-                    if ventas_with_offers.empty:
-                        st.info("No hay registros de compras con ofertas para los segmentos seleccionados.")
-                    else:
-                        if has_details and 'age_group' in df_details.columns:
-                            ventas_with_offers = pd.merge(ventas_with_offers, df_details[['student_id', 'age_group']], on='student_id', how='left')
-
-                        ventas_with_offers['offer_id_raw'] = ventas_with_offers['offerids'].astype(str).str.split(',')
-                        exploded_ventas = ventas_with_offers.explode('offer_id_raw')
-                        exploded_ventas['offer_id_clean'] = exploded_ventas['offer_id_raw'].str.strip()
-
-                        # Eliminar el prefijo '500' de cada offer_id
-                        exploded_ventas['offer_id'] = exploded_ventas['offer_id_clean'].apply(
-                            lambda x: int(x[3:]) if str(x).startswith('500') and len(str(x)) > 3 and str(x)[3:].isdigit() else None
-                        )
-
-                        merged_offers = pd.merge(exploded_ventas, df_offers, on='offer_id', how='inner')
-
-                        # Filtro interactivo opcional por Rango de Edad
-                        if 'age_group' in merged_offers.columns:
-                            avail_ages = ["-- Todos los Rangos de Edad --"] + sorted([str(a) for a in merged_offers['age_group'].dropna().unique()])
-                            selected_age = st.selectbox("Filtrar la tabla de ofertas por Rango de Edad específico (`age_group`):", options=avail_ages)
-
-                            if selected_age != "-- Todos los Rangos de Edad --":
-                                merged_offers = merged_offers[merged_offers['age_group'] == selected_age]
-
-                        col_off1, col_demo2 = st.columns(2)
-
-                        with col_off1:
-                            st.markdown("**Todas las Ofertas / Menús Comprados:**")
-                            group_cols = ['bucket_name', 'title']
-                            if 'age_group' in merged_offers.columns and selected_age != "-- Todos los Rangos de Edad --":
-                                group_cols = ['bucket_name', 'age_group', 'title']
-
-                            all_titles = merged_offers.groupby(group_cols)['sale_id'].count().reset_index()
-                            if 'age_group' in group_cols:
-                                all_titles.columns = ['Segmento', 'Rango de Edad', 'Título Oferta / Producto', 'Veces Comprado']
-                            else:
-                                all_titles.columns = ['Segmento', 'Título Oferta / Producto', 'Veces Comprado']
-
-                            all_titles = all_titles.sort_values(by=['Segmento', 'Veces Comprado'], ascending=[True, False]).reset_index(drop=True)
-                            st.dataframe(all_titles, use_container_width=True)
-
                         with col_demo2:
-                            st.markdown("**Estrategia de Marketing Usada (`marketing_sublayer`):**")
-                            if 'marketing_sublayer' in merged_offers.columns:
-                                sublayer_summary = merged_offers.groupby(['bucket_name', 'marketing_sublayer'])['sale_id'].count().unstack().fillna(0)
-                                sublayer_pct = sublayer_summary.div(sublayer_summary.sum(axis=1), axis=0) * 100
-                                st.dataframe(sublayer_pct.round(1).astype(str) + " %", use_container_width=True)
+                            st.markdown("#### 🍟 Hábitos de Canje (`redeemer_...`)")
+                            redeemer_cols_all = [c for c in filtered_merged.columns if 'redeemer_' in c]
+                            if redeemer_cols_all:
+                                group_cols_r = [bucket_col]
+                                if 'age_group' in filtered_merged.columns:
+                                    group_cols_r.append('age_group')
+                                if 'persona' in filtered_merged.columns:
+                                    group_cols_r.append('persona')
+                                    
+                                redemption_pct = (filtered_merged.groupby(group_cols_r)[redeemer_cols_all].mean() * 100).round(1)
+                                redemption_pct.columns = [c.replace('redeemer_', '').capitalize() for c in redemption_pct.columns]
+                                st.dataframe(redemption_pct, use_container_width=True)
 
-                # --- SECCIÓN 5: ENGAGEMENT POR FIDELIZACIÓN ---
-                st.markdown("---")
-                st.subheader("5. Nivel de Engagement por Fidelización (Segmentos Seleccionados)")
+                    # --- SECCIÓN 4: ANÁLISIS DETALLADO DE COMPRAS Y HORARIOS ---
+                    st.markdown("---")
+                    st.subheader("4. ¿Qué Compran Exactamente? — Horarios (`daypart`) y Ofertas (`Offers.csv`)")
 
-                if not has_details:
-                    st.info("ℹ️ Carga `Customers_details.csv` para ver las métricas de lealtad.")
-                else:
-                    redeemer_cols_all = [c for c in filtered_merged.columns if 'redeemer_' in c]
-                    filtered_merged['total_canjes_familias'] = filtered_merged[redeemer_cols_all].sum(axis=1)
-
-                    loyalty_engagement = filtered_merged.groupby(bucket_col).agg(
-                        pct_usuarios_que_canjean=('points_burned', lambda x: (x < 0).mean() * 100),
-                        puntos_ganados_media=('points_earned', 'mean'),
-                        puntos_canjeados_media=('points_burned', 'mean'),
-                        saldo_puntos_media=('points_balance', 'mean'),
-                        familias_productos_canjeadas=('total_canjes_familias', 'mean')
-                    ).reset_index()
-
-                    loyalty_engagement.rename(columns={bucket_col: 'Segmento'}, inplace=True)
-                    
-                    loyalty_display = loyalty_engagement.copy()
-                    loyalty_display['pct_usuarios_que_canjean'] = loyalty_display['pct_usuarios_que_canjean'].round(1).astype(str) + " %"
-                    loyalty_display['puntos_ganados_media'] = loyalty_display['puntos_ganados_media'].round(0)
-                    loyalty_display['puntos_canjeados_media'] = loyalty_display['puntos_canjeados_media'].round(0)
-                    loyalty_display['saldo_puntos_media'] = loyalty_display['saldo_puntos_media'].round(0)
-                    loyalty_display['familias_productos_canjeadas'] = loyalty_display['familias_productos_canjeadas'].round(2)
-
-                    st.dataframe(loyalty_display, use_container_width=True)
-
-                # --- SECCIÓN 6: ANÁLISIS RFM A NIVEL DE USUARIO Y DISTANCIAS ---
-                st.markdown("---")
-                st.subheader("6. Análisis RFM: Distancia de Usuarios vs. Media del Segmento")
-                
-                if 'r_raw' in filtered_merged.columns and 'f_raw' in filtered_merged.columns and 'm_raw' in filtered_merged.columns:
-                    # Calcular medias del segmento
-                    rfm_means = filtered_merged.groupby(bucket_col)[['r_raw', 'f_raw', 'm_raw']].mean().reset_index()
-                    rfm_means.rename(columns={'r_raw': 'Media R (Recencia)', 'f_raw': 'Media F (Frecuencia)', 'm_raw': 'Media M (Monetario)'}, inplace=True)
-                    
-                    st.markdown("#### 📊 Medias RFM de los Segmentos Seleccionados")
-                    st.dataframe(rfm_means.style.format({'Media R (Recencia)': '{:.1f}', 'Media F (Frecuencia)': '{:.1f}', 'Media M (Monetario)': '{:.2f} €'}))
-                    
-                    st.markdown("#### 👤 Desviación RFM por Usuario (`student_id`)")
-                    st.write("Compara los valores RFM reales de cada usuario con la media exacta de su segmento. Valores positivos en `Dif. F` o `Dif. M` indican que el cliente interactúa o gasta por encima de la media de su grupo.")
-                    
-                    # Unir medias a la tabla a nivel usuario
-                    user_rfm = filtered_merged[['student_id', bucket_col, 'r_raw', 'f_raw', 'm_raw']].copy()
-                    user_rfm = pd.merge(user_rfm, rfm_means, left_on=bucket_col, right_on=bucket_col, how='left')
-                    
-                    # Calcular distancias
-                    user_rfm['Dif. R (Días)'] = user_rfm['r_raw'] - user_rfm['Media R (Recencia)']
-                    user_rfm['Dif. F (Compras)'] = user_rfm['f_raw'] - user_rfm['Media F (Frecuencia)']
-                    user_rfm['Dif. M (€)'] = user_rfm['m_raw'] - user_rfm['Media M (Monetario)']
-                    
-                    # Reordenar y redondear columnas para presentación
-                    display_cols = ['student_id', bucket_col, 'r_raw', 'Dif. R (Días)', 'f_raw', 'Dif. F (Compras)', 'm_raw', 'Dif. M (€)']
-                    user_rfm_display = user_rfm[display_cols].copy()
-                    for col in ['Dif. R (Días)', 'Dif. F (Compras)', 'Dif. M (€)', 'm_raw', 'f_raw', 'r_raw']:
-                        user_rfm_display[col] = user_rfm_display[col].round(2)
-                    
-                    # Buscador individual opcional
-                    search_rfm = st.text_input("🔍 Buscar un `student_id` específico en esta tabla:", key="search_rfm")
-                    if search_rfm:
-                        user_rfm_display = user_rfm_display[user_rfm_display['student_id'].astype(str).str.contains(search_rfm, case=False, na=False)]
+                    # Cruzamos ventas SOLO con los usuarios que han sobrevivido a todos los filtros globales
+                    cols_to_bring = ['student_id', bucket_col]
+                    if has_details and 'age_group' in filtered_merged.columns:
+                        cols_to_bring.append('age_group')
+                    if has_details and 'persona' in filtered_merged.columns:
+                        cols_to_bring.append('persona')
                         
-                    st.dataframe(user_rfm_display, use_container_width=True)
+                    ventas_targets = pd.merge(df_ventas, filtered_merged[cols_to_bring], on='student_id', how='inner')
+
+                    # A. Momento del día (daypart)
+                    if 'daypart' in ventas_targets.columns and not ventas_targets.empty:
+                        st.markdown("#### ⏰ Distribución Horaria (`daypart`)")
+                        # Filtro de categorías residuales
+                        ventas_targets = ventas_targets[ventas_targets['daypart'].astype(str).str.contains('NL', case=False, na=False)]
+                        
+                        group_cols_d = [bucket_col]
+                        if 'age_group' in ventas_targets.columns: group_cols_d.append('age_group')
+                        if 'persona' in ventas_targets.columns: group_cols_d.append('persona')
+                            
+                        daypart_summary = ventas_targets.groupby(group_cols_d + ['daypart'])['sale_id'].nunique().unstack().fillna(0)
+                        if not daypart_summary.empty:
+                            daypart_pct = daypart_summary.div(daypart_summary.sum(axis=1), axis=0) * 100
+                            st.dataframe(daypart_pct.round(1).astype(str) + " %", use_container_width=True)
+
+                    # B. Cruce de Ofertas con Offers.csv
+                    if not has_offers:
+                        st.info("ℹ️ Carga el archivo `Offers.csv` para ver las ofertas y promociones específicas que compran estos usuarios.")
+                    else:
+                        st.markdown("#### 🏷️ Ranking Completo de Ofertas y Menús Comprados (`Offers.csv`)")
+                        df_offers = dfs[offers_file[0]]
+
+                        ventas_with_offers = ventas_targets.dropna(subset=['offerids']).copy()
+
+                        if ventas_with_offers.empty:
+                            st.info("No hay registros de compras con ofertas para los filtros seleccionados.")
+                        else:
+                            ventas_with_offers['offer_id_raw'] = ventas_with_offers['offerids'].astype(str).str.split(',')
+                            exploded_ventas = ventas_with_offers.explode('offer_id_raw')
+                            exploded_ventas['offer_id_clean'] = exploded_ventas['offer_id_raw'].str.strip()
+
+                            # Eliminar prefijo 500
+                            exploded_ventas['offer_id'] = exploded_ventas['offer_id_clean'].apply(
+                                lambda x: int(x[3:]) if str(x).startswith('500') and len(str(x)) > 3 and str(x)[3:].isdigit() else None
+                            )
+
+                            merged_offers = pd.merge(exploded_ventas, df_offers, on='offer_id', how='inner')
+
+                            col_off1, col_off2 = st.columns(2)
+
+                            with col_off1:
+                                st.markdown("**Todas las Ofertas / Menús Comprados:**")
+                                group_cols_o = [bucket_col]
+                                if 'age_group' in merged_offers.columns: group_cols_o.append('age_group')
+                                if 'persona' in merged_offers.columns: group_cols_o.append('persona')
+                                group_cols_o.append('title')
+
+                                all_titles = merged_offers.groupby(group_cols_o)['sale_id'].count().reset_index()
+                                all_titles.rename(columns={'sale_id': 'Veces Comprado', bucket_col: 'Segmento', 'title': 'Título Oferta / Producto'}, inplace=True)
+                                all_titles = all_titles.sort_values(by=['Segmento', 'Veces Comprado'], ascending=[True, False]).reset_index(drop=True)
+                                st.dataframe(all_titles, use_container_width=True)
+
+                            with col_off2:
+                                st.markdown("**Estrategia de Marketing Usada (`marketing_sublayer`):**")
+                                if 'marketing_sublayer' in merged_offers.columns:
+                                    sublayer_summary = merged_offers.groupby([bucket_col, 'marketing_sublayer'])['sale_id'].count().unstack().fillna(0)
+                                    sublayer_pct = sublayer_summary.div(sublayer_summary.sum(axis=1), axis=0) * 100
+                                    st.dataframe(sublayer_pct.round(1).astype(str) + " %", use_container_width=True)
+
+                    # --- SECCIÓN 5: ENGAGEMENT POR FIDELIZACIÓN ---
+                    st.markdown("---")
+                    st.subheader("5. Nivel de Engagement por Fidelización")
+
+                    if not has_details:
+                        st.info("ℹ️ Carga `Customers_details.csv` para ver las métricas de lealtad.")
+                    else:
+                        redeemer_cols_all = [c for c in filtered_merged.columns if 'redeemer_' in c]
+                        filtered_merged['total_canjes_familias'] = filtered_merged[redeemer_cols_all].sum(axis=1)
+
+                        loyalty_engagement = filtered_merged.groupby(bucket_col).agg(
+                            pct_usuarios_que_canjean=('points_burned', lambda x: (x < 0).mean() * 100),
+                            puntos_ganados_media=('points_earned', 'mean'),
+                            puntos_canjeados_media=('points_burned', 'mean'),
+                            saldo_puntos_media=('points_balance', 'mean'),
+                            familias_productos_canjeadas=('total_canjes_familias', 'mean')
+                        ).reset_index()
+
+                        loyalty_engagement.rename(columns={bucket_col: 'Segmento'}, inplace=True)
+                        
+                        loyalty_display = loyalty_engagement.copy()
+                        loyalty_display['pct_usuarios_que_canjean'] = loyalty_display['pct_usuarios_que_canjean'].round(1).astype(str) + " %"
+                        loyalty_display['puntos_ganados_media'] = loyalty_display['puntos_ganados_media'].round(0)
+                        loyalty_display['puntos_canjeados_media'] = loyalty_display['puntos_canjeados_media'].round(0)
+                        loyalty_display['saldo_puntos_media'] = loyalty_display['saldo_puntos_media'].round(0)
+                        loyalty_display['familias_productos_canjeadas'] = loyalty_display['familias_productos_canjeadas'].round(2)
+
+                        st.dataframe(loyalty_display, use_container_width=True)
+
+                    # --- SECCIÓN 6: ANÁLISIS RFM A NIVEL DE USUARIO Y DISTANCIAS ---
+                    st.markdown("---")
+                    st.subheader("6. Análisis RFM: Distancia de Usuarios vs. Media del Segmento")
                     
-                else:
-                    st.info("ℹ️ No se encontraron las columnas 'r_raw', 'f_raw' o 'm_raw' en los archivos cargados. Asegúrate de que 'clientes.csv' contiene estos datos.")
+                    if 'r_raw' in filtered_merged.columns and 'f_raw' in filtered_merged.columns and 'm_raw' in filtered_merged.columns:
+                        rfm_means = filtered_merged.groupby(bucket_col)[['r_raw', 'f_raw', 'm_raw']].mean().reset_index()
+                        rfm_means.rename(columns={'r_raw': 'Media R (Recencia)', 'f_raw': 'Media F (Frecuencia)', 'm_raw': 'Media M (Monetario)'}, inplace=True)
+                        
+                        st.markdown("#### 📊 Medias RFM de la selección actual")
+                        st.dataframe(rfm_means.style.format({'Media R (Recencia)': '{:.1f}', 'Media F (Frecuencia)': '{:.1f}', 'Media M (Monetario)': '{:.2f} €'}))
+                        
+                        st.markdown("#### 👤 Desviación RFM por Usuario (`student_id`)")
+                        
+                        user_rfm = filtered_merged[['student_id', bucket_col, 'r_raw', 'f_raw', 'm_raw']].copy()
+                        user_rfm = pd.merge(user_rfm, rfm_means, left_on=bucket_col, right_on=bucket_col, how='left')
+                        
+                        user_rfm['Dif. R (Días)'] = user_rfm['r_raw'] - user_rfm['Media R (Recencia)']
+                        user_rfm['Dif. F (Compras)'] = user_rfm['f_raw'] - user_rfm['Media F (Frecuencia)']
+                        user_rfm['Dif. M (€)'] = user_rfm['m_raw'] - user_rfm['Media M (Monetario)']
+                        
+                        display_cols = ['student_id', bucket_col, 'r_raw', 'Dif. R (Días)', 'f_raw', 'Dif. F (Compras)', 'm_raw', 'Dif. M (€)']
+                        user_rfm_display = user_rfm[display_cols].copy()
+                        for col in ['Dif. R (Días)', 'Dif. F (Compras)', 'Dif. M (€)', 'm_raw', 'f_raw', 'r_raw']:
+                            user_rfm_display[col] = user_rfm_display[col].round(2)
+                        
+                        search_rfm = st.text_input("🔍 Buscar un `student_id` específico en esta tabla:", key="search_rfm")
+                        if search_rfm:
+                            user_rfm_display = user_rfm_display[user_rfm_display['student_id'].astype(str).str.contains(search_rfm, case=False, na=False)]
+                            
+                        st.dataframe(user_rfm_display, use_container_width=True)
+                        
+                    else:
+                        st.info("ℹ️ No se encontraron las columnas 'r_raw', 'f_raw' o 'm_raw' en los archivos cargados.")
 
     else:
         # --- MODO DE TABLAS INDIVIDUALES Y BÚSQUEDA ---
