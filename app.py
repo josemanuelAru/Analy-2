@@ -145,7 +145,6 @@ if uploaded_files:
                 else:
                     col_demo1, col_demo2 = st.columns(2)
 
-                    # A. Persona desglosado por Segmento + age_group
                     with col_demo1:
                         st.markdown("#### 👤 Perfil Predominante (`persona`) por Segmento y Edad")
                         if 'age_group' in filtered_merged.columns:
@@ -157,7 +156,6 @@ if uploaded_files:
                             persona_pct = persona_summary.div(persona_summary.sum(axis=1), axis=0) * 100
                             st.dataframe(persona_pct.round(1).astype(str) + " %", use_container_width=True)
 
-                    # B. Canjes desglosados por Segmento + age_group
                     with col_demo2:
                         st.markdown("#### 🍟 Hábitos de Canje (`redeemer_...`) por Segmento y Edad")
                         redeemer_cols_all = [c for c in filtered_merged.columns if 'redeemer_' in c]
@@ -179,8 +177,8 @@ if uploaded_files:
                     st.markdown("#### ⏰ Distribución Horaria (`daypart`) por Segmento y Edad")
                     ventas_targets = df_ventas[df_ventas['bucket_name'].isin(selected_buckets)].copy()
                     
-                    # FILTRO NUEVO: Eliminar categorías residuales / anómalas
-                    ventas_targets = ventas_targets[~ventas_targets['daypart'].isin(['BREAKFAST_MENU', 'DAY_MENU'])]
+                    # FILTRO NUEVO: Conservar únicamente las franjas horarias que contienen "NL"
+                    ventas_targets = ventas_targets[ventas_targets['daypart'].astype(str).str.contains('NL', case=False, na=False)]
                     
                     if has_details and 'age_group' in df_details.columns:
                         ventas_targets = pd.merge(ventas_targets, df_details[['student_id', 'age_group']], on='student_id', how='left')
