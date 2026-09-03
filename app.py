@@ -9,13 +9,13 @@ st.set_page_config(
 )
 
 st.title("🍔 McDonald's NL — CRM & Customer Analytics Dashboard")
-st.write("Carga tus archivos CSV del caso práctico (`clientes.csv`, `ventas.csv`, `Customers_details.csv`, `Offers.csv`, `Campañas.csv`, etc.) para realizar el análisis interactivo.")
+st.write("Carga tus archivos CSV o ZIP del caso práctico (`clientes.csv`, `ventas.csv.zip`, `Customers_details.csv`, `Offers.csv`, `Campañas.csv.zip`, etc.) para realizar el análisis interactivo.")
 
 # Sidebar: Carga de archivos
-st.sidebar.header("1. Cargar Archivos CSV")
+st.sidebar.header("1. Cargar Archivos CSV o ZIP")
 uploaded_files = st.sidebar.file_uploader(
-    "Selecciona los archivos CSV del proyecto", 
-    type=["csv"], 
+    "Selecciona los archivos CSV o ZIP del proyecto", 
+    type=["csv", "zip"], 
     accept_multiple_files=True
 )
 
@@ -23,7 +23,11 @@ if uploaded_files:
     dfs = {}
     for file in uploaded_files:
         try:
-            dfs[file.name] = pd.read_csv(file)
+            # Si el archivo termina en .zip, Pandas lo descomprime y lee el CSV interno automáticamente
+            if file.name.endswith('.zip'):
+                dfs[file.name] = pd.read_csv(file, compression='zip')
+            else:
+                dfs[file.name] = pd.read_csv(file)
         except Exception as e:
             st.error(f"Error al cargar {file.name}: {e}")
 
@@ -44,7 +48,7 @@ if uploaded_files:
         has_ventas = any("ventas" in name.lower() for name in dfs.keys())
 
         if not (has_clientes and has_ventas):
-            st.warning("⚠️ Para usar este módulo necesitas cargar al menos los archivos `clientes.csv` y `ventas.csv`.")
+            st.warning("⚠️ Para usar este módulo necesitas cargar al menos los archivos `clientes.csv` y `ventas.csv` (o sus versiones .zip).")
         else:
             # Obtener dataframes principales
             clientes_file = [name for name in dfs.keys() if "clientes" in name.lower() and "details" not in name.lower()][0]
@@ -311,4 +315,4 @@ if uploaded_files:
             else:
                 st.error("No se encontró la columna 'student_id' en los archivos cargados.")
 else:
-    st.info("👆 Por favor, sube tus archivos CSV desde la barra lateral izquierda para iniciar la herramienta.")
+    st.info("👆 Por favor, sube tus archivos CSV o ZIP desde la barra lateral izquierda para iniciar la herramienta.")
