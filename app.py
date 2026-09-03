@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import zipfile
 
 # Configuración de la página
 st.set_page_config(
@@ -23,9 +24,17 @@ if uploaded_files:
     dfs = {}
     for file in uploaded_files:
         try:
-            # Si el archivo termina en .zip, Pandas lo descomprime y lee el CSV interno automáticamente
             if file.name.endswith('.zip'):
-                dfs[file.name] = pd.read_csv(file, compression='zip')
+                # Usar zipfile para abrir el archivo y saltarse la basura de Mac (__MACOSX)
+                with zipfile.ZipFile(file, 'r') as z:
+                    # Extraer solo los nombres que terminen en .csv y no sean archivos ocultos de Mac
+                    csv_files = [f for f in z.namelist() if f.endswith('.csv') and not f.startswith('__MACOSX') and not f.split('/')[-1].startswith('.')]
+                    
+                    if csv_files:
+                        with z.open(csv_files[0]) as f:
+                            dfs[file.name] = pd.read_csv(f)
+                    else:
+                        st.error(f"No se encontró un CSV válido dentro del zip {file.name}")
             else:
                 dfs[file.name] = pd.read_csv(file)
         except Exception as e:
