@@ -179,6 +179,9 @@ if uploaded_files:
                     st.markdown("#### ⏰ Distribución Horaria (`daypart`) por Segmento y Edad")
                     ventas_targets = df_ventas[df_ventas['bucket_name'].isin(selected_buckets)].copy()
                     
+                    # FILTRO NUEVO: Eliminar categorías residuales / anómalas
+                    ventas_targets = ventas_targets[~ventas_targets['daypart'].isin(['BREAKFAST_MENU', 'DAY_MENU'])]
+                    
                     if has_details and 'age_group' in df_details.columns:
                         ventas_targets = pd.merge(ventas_targets, df_details[['student_id', 'age_group']], on='student_id', how='left')
                         daypart_summary = ventas_targets.groupby(['bucket_name', 'age_group', 'daypart'])['sale_id'].nunique().unstack().fillna(0)
