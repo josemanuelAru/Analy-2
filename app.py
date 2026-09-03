@@ -136,35 +136,58 @@ if uploaded_files:
                         if 'push_optin' in df_seg.columns:
                             st.write(f"📲 **Notificaciones Push:** {df_seg['push_optin'].mean()*100:.1f}%")
 
-                # --- SECCIÓN 3: PERFIL DEMOGRÁFICO Y CANJES DESGLOSADO POR GRUPO DE EDAD ---
+                # --- SECCIÓN 3: PERFIL DEMOGRÁFICO Y CANJES DESGLOSADO POR EDAD Y PERSONA ---
                 st.markdown("---")
-                st.subheader("3. Perfil Demográfico (`persona`) y Hábitos de Canje (`redeemer_...`) desglosados por Grupo de Edad (`age_group`)")
+                st.subheader("3. Perfil Demográfico (`persona`) y Hábitos de Canje (`redeemer_...`)")
 
                 if not has_details:
                     st.info("ℹ️ Sube el archivo `Customers_details.csv` en la barra lateral para desbloquear el desglose por Persona y Edad.")
                 else:
+                    st.write("Filtra para aislar los hábitos de un grupo de edad o perfil en concreto:")
+                    col_f1, col_f2 = st.columns(2)
+                    
+                    df_sec3 = filtered_merged.copy()
+                    
+                    with col_f1:
+                        if 'age_group' in df_sec3.columns:
+                            avail_ages_sec3 = ["-- Todos los Rangos --"] + sorted([str(a) for a in df_sec3['age_group'].dropna().unique()])
+                            sel_age_sec3 = st.selectbox("Filtrar por Grupo de Edad:", options=avail_ages_sec3, key="age_sec3")
+                            if sel_age_sec3 != "-- Todos los Rangos --":
+                                df_sec3 = df_sec3[df_sec3['age_group'] == sel_age_sec3]
+                                
+                    with col_f2:
+                        if 'persona' in df_sec3.columns:
+                            avail_personas = ["-- Todos los Perfiles --"] + sorted([str(p) for p in df_sec3['persona'].dropna().unique()])
+                            sel_persona_sec3 = st.selectbox("Filtrar por Perfil (`persona`):", options=avail_personas, key="per_sec3")
+                            if sel_persona_sec3 != "-- Todos los Perfiles --":
+                                df_sec3 = df_sec3[df_sec3['persona'] == sel_persona_sec3]
+
                     col_demo1, col_demo2 = st.columns(2)
 
                     with col_demo1:
-                        st.markdown("#### 👤 Perfil Predominante (`persona`) por Segmento y Edad")
-                        if 'age_group' in filtered_merged.columns:
-                            persona_summary = filtered_merged.groupby([bucket_col, 'age_group', 'persona'])['student_id'].count().unstack().fillna(0)
-                            persona_pct = persona_summary.div(persona_summary.sum(axis=1), axis=0) * 100
-                            st.dataframe(persona_pct.round(1).astype(str) + " %", use_container_width=True)
+                        st.markdown("#### 👤 Distribución de Perfiles (`persona`)")
+                        if df_sec3.empty:
+                            st.warning("No hay datos para estos filtros.")
                         else:
-                            persona_summary = filtered_merged.groupby([bucket_col, 'persona'])['student_id'].count().unstack().fillna(0)
+                            group_cols_p = [bucket_col]
+                            if 'age_group' in df_sec3.columns and sel_age_sec3 == "-- Todos los Rangos --":
+                                group_cols_p.append('age_group')
+                                
+                            persona_summary = df_sec3.groupby(group_cols_p + ['persona'])['student_id'].count().unstack().fillna(0)
                             persona_pct = persona_summary.div(persona_summary.sum(axis=1), axis=0) * 100
                             st.dataframe(persona_pct.round(1).astype(str) + " %", use_container_width=True)
 
                     with col_demo2:
-                        st.markdown("#### 🍟 Hábitos de Canje (`redeemer_...`) por Segmento y Edad")
-                        redeemer_cols_all = [c for c in filtered_merged.columns if 'redeemer_' in c]
-                        if redeemer_cols_all:
-                            if 'age_group' in filtered_merged.columns:
-                                redemption_pct = (filtered_merged.groupby([bucket_col, 'age_group'])[redeemer_cols_all].mean() * 100).round(1)
-                            else:
-                                redemption_pct = (filtered_merged.groupby(bucket_col)[redeemer_cols_all].mean() * 100).round(1)
-                            
+                        st.markdown("#### 🍟 Hábitos de Canje (`redeemer_...`)")
+                        redeemer_cols_all = [c for c in df_sec3.columns if 'redeemer_' in c]
+                        if redeemer_cols_all and not df_sec3.empty:
+                            group_cols_r = [bucket_col]
+                            if 'age_group' in df_sec3.columns and sel_age_sec3 == "-- Todos los Rangos --":
+                                group_cols_r.append('age_group')
+                            if 'persona' in df_sec3.columns and sel_persona_sec3 == "-- Todos los Perfiles --":
+                                group_cols_r.append('persona')
+                                
+                            redemption_pct = (df_sec3.groupby(group_cols_r)[redeemer_cols_all].mean() * 100).round(1)
                             redemption_pct.columns = [c.replace('redeemer_', '').capitalize() for c in redemption_pct.columns]
                             st.dataframe(redemption_pct, use_container_width=True)
 
