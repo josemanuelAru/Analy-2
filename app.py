@@ -275,6 +275,46 @@ if uploaded_files:
 
                     st.dataframe(loyalty_display, use_container_width=True)
 
+                # --- SECCIÓN 6: ANÁLISIS RFM A NIVEL DE USUARIO Y DISTANCIAS ---
+                st.markdown("---")
+                st.subheader("6. Análisis RFM: Distancia de Usuarios vs. Media del Segmento")
+                
+                if 'r_raw' in filtered_merged.columns and 'f_raw' in filtered_merged.columns and 'm_raw' in filtered_merged.columns:
+                    # Calcular medias del segmento
+                    rfm_means = filtered_merged.groupby(bucket_col)[['r_raw', 'f_raw', 'm_raw']].mean().reset_index()
+                    rfm_means.rename(columns={'r_raw': 'Media R (Recencia)', 'f_raw': 'Media F (Frecuencia)', 'm_raw': 'Media M (Monetario)'}, inplace=True)
+                    
+                    st.markdown("#### 📊 Medias RFM de los Segmentos Seleccionados")
+                    st.dataframe(rfm_means.style.format({'Media R (Recencia)': '{:.1f}', 'Media F (Frecuencia)': '{:.1f}', 'Media M (Monetario)': '{:.2f} €'}))
+                    
+                    st.markdown("#### 👤 Desviación RFM por Usuario (`student_id`)")
+                    st.write("Compara los valores RFM reales de cada usuario con la media exacta de su segmento. Valores positivos en `Dif. F` o `Dif. M` indican que el cliente interactúa o gasta por encima de la media de su grupo.")
+                    
+                    # Unir medias a la tabla a nivel usuario
+                    user_rfm = filtered_merged[['student_id', bucket_col, 'r_raw', 'f_raw', 'm_raw']].copy()
+                    user_rfm = pd.merge(user_rfm, rfm_means, left_on=bucket_col, right_on=bucket_col, how='left')
+                    
+                    # Calcular distancias
+                    user_rfm['Dif. R (Días)'] = user_rfm['r_raw'] - user_rfm['Media R (Recencia)']
+                    user_rfm['Dif. F (Compras)'] = user_rfm['f_raw'] - user_rfm['Media F (Frecuencia)']
+                    user_rfm['Dif. M (€)'] = user_rfm['m_raw'] - user_rfm['Media M (Monetario)']
+                    
+                    # Reordenar y redondear columnas para presentación
+                    display_cols = ['student_id', bucket_col, 'r_raw', 'Dif. R (Días)', 'f_raw', 'Dif. F (Compras)', 'm_raw', 'Dif. M (€)']
+                    user_rfm_display = user_rfm[display_cols].copy()
+                    for col in ['Dif. R (Días)', 'Dif. F (Compras)', 'Dif. M (€)', 'm_raw', 'f_raw', 'r_raw']:
+                        user_rfm_display[col] = user_rfm_display[col].round(2)
+                    
+                    # Buscador individual opcional
+                    search_rfm = st.text_input("🔍 Buscar un `student_id` específico en esta tabla:", key="search_rfm")
+                    if search_rfm:
+                        user_rfm_display = user_rfm_display[user_rfm_display['student_id'].astype(str).str.contains(search_rfm, case=False, na=False)]
+                        
+                    st.dataframe(user_rfm_display, use_container_width=True)
+                    
+                else:
+                    st.info("ℹ️ No se encontraron las columnas 'r_raw', 'f_raw' o 'm_raw' en los archivos cargados. Asegúrate de que 'clientes.csv' contiene estos datos.")
+
     else:
         # --- MODO DE TABLAS INDIVIDUALES Y BÚSQUEDA ---
         tab_names = [f"📄 {name}" for name in dfs.keys()] + ["🔍 Búsqueda por student_id"]
