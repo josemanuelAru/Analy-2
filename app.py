@@ -25,8 +25,11 @@ if uploaded_files:
     for file in uploaded_files:
         try:
             if file.name.endswith('.zip'):
+                # Usar zipfile para abrir el archivo y saltarse la basura de Mac (__MACOSX)
                 with zipfile.ZipFile(file, 'r') as z:
+                    # Extraer solo los nombres que terminen en .csv y no sean archivos ocultos de Mac
                     csv_files = [f for f in z.namelist() if f.endswith('.csv') and not f.startswith('__MACOSX') and not f.split('/')[-1].startswith('.')]
+                    
                     if csv_files:
                         with z.open(csv_files[0]) as f:
                             dfs[file.name] = pd.read_csv(f)
@@ -204,19 +207,23 @@ if uploaded_files:
                     st.markdown("---")
                     st.subheader("4. ¿Qué Compran Exactamente? — Horarios (`daypart`) y Ofertas (`Offers.csv`)")
 
-                    # Cruzamos ventas SOLO con los usuarios que han sobrevivido a todos los filtros globales
-                    cols_to_bring = ['student_id', bucket_col]
-                    if has_details and 'age_group' in filtered_merged.columns:
-                        cols_to_bring.append('age_group')
-                    if has_details and 'persona' in filtered_merged.columns:
-                        cols_to_bring.append('persona')
-                        
-                    ventas_targets = pd.merge(df_ventas, filtered_merged[cols_to_bring], on='student_id', how='inner')
+                    # Cruzamos ventas SOLO con los usuarios que han sobrevivido a los filtros (sin duplicar columnas)
+                    ventas_targets = df_ventas[df_ventas['student_id'].isin(filtered_merged['student_id'])].copy()
+                    
+                    # Traemos las columnas demográficas sin duplicar las existentes
+                    cols_to_add = []
+                    for col in [bucket_col, 'age_group', 'persona']:
+                        if col in filtered_merged.columns and col not in ventas_targets.columns:
+                            cols_to_add.append(col)
+                            
+                    if cols_to_add:
+                        df_to_merge = filtered_merged[['student_id'] + cols_to_add].drop_duplicates('student_id')
+                        ventas_targets = pd.merge(ventas_targets, df_to_merge, on='student_id', how='left')
 
                     # A. Momento del día (daypart)
                     if 'daypart' in ventas_targets.columns and not ventas_targets.empty:
                         st.markdown("#### ⏰ Distribución Horaria (`daypart`)")
-                        # Filtro de categorías residuales
+                        # Filtro de categorías residuales conservando sólo las NL
                         ventas_targets = ventas_targets[ventas_targets['daypart'].astype(str).str.contains('NL', case=False, na=False)]
                         
                         group_cols_d = [bucket_col]
@@ -235,6 +242,7 @@ if uploaded_files:
                         st.markdown("#### 🏷️ Ranking Completo de Ofertas y Menús Comprados (`Offers.csv`)")
                         df_offers = dfs[offers_file[0]]
 
+                        # Usamos ventas_targets que ya tiene las columnas demográficas limpias
                         ventas_with_offers = ventas_targets.dropna(subset=['offerids']).copy()
 
                         if ventas_with_offers.empty:
